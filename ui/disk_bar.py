@@ -1,21 +1,23 @@
-"""Barra gráfica de uso del disco (Canvas)."""
+"""Barra gráfica de uso del disco (Canvas) — diseño moderno."""
 
 import shutil
 import tkinter as tk
 from tkinter import ttk
 
 from utils.formatters import format_size
+import ui.theme as theme
 
 
 class DiskBar(ttk.Frame):
     def __init__(self, parent, **kwargs):
+        kwargs.setdefault("style", "Surface.TFrame")
         super().__init__(parent, **kwargs)
         self._build()
 
     def _build(self):
-        self._canvas = tk.Canvas(self, height=28, bg="#2b2b2b",
+        self._canvas = tk.Canvas(self, height=46, bg=theme.BG_SURFACE,
                                   highlightthickness=0)
-        self._canvas.pack(fill="x", padx=8, pady=4)
+        self._canvas.pack(fill="x", padx=0, pady=0)
         self._canvas.bind("<Configure>", self._redraw)
         self._data = None   # (used, total, path_label)
 
@@ -36,24 +38,74 @@ class DiskBar(ttk.Frame):
         if w < 2 or h < 2:
             return
 
+        # Fondo
+        c.create_rectangle(0, 0, w, h, fill=theme.BG_SURFACE, outline="")
+
         if not self._data:
-            c.create_text(w // 2, h // 2, text="—", fill="#888", anchor="center")
+            c.create_text(w // 2, h // 2, text="— Sin datos de disco —",
+                          fill=theme.TEXT_MUTED, anchor="center",
+                          font=theme.FONT_UI)
             return
 
         used, total, drive = self._data
         pct = used / total if total > 0 else 0
 
-        # Fondo
-        c.create_rectangle(0, 0, w, h, fill="#3c3c3c", outline="")
+        # Track (fondo de la barra)
+        bar_x1, bar_y1 = 12, h - 10
+        bar_x2, bar_y2 = w - 12, h - 5
+        radius = 3
+        self._rounded_rect(c, bar_x1, bar_y1, bar_x2, bar_y2,
+                            radius, fill=theme.DISK_TRACK, outline="")
 
         # Barra de uso
-        bar_w = int((w - 16) * pct)
-        color = "#e05252" if pct > 0.9 else "#e0a030" if pct > 0.75 else "#4caf50"
-        if bar_w > 0:
-            c.create_rectangle(8, 4, 8 + bar_w, h - 4, fill=color, outline="")
+        color = (theme.DISK_RED   if pct > 0.9 else
+                 theme.DISK_AMBER if pct > 0.75 else
+                 theme.DISK_GREEN)
+        fill_w = int((bar_x2 - bar_x1) * pct)
+        if fill_w > radius * 2:
+            self._rounded_rect(c, bar_x1, bar_y1, bar_x1 + fill_w, bar_y2,
+                                radius, fill=color, outline="")
+        elif fill_w > 0:
+            c.create_rectangle(bar_x1, bar_y1, bar_x1 + fill_w, bar_y2,
+                                fill=color, outline="")
 
-        # Texto
-        pct_txt = f"{pct * 100:.1f}%"
-        size_txt = f"{drive}  {format_size(used)} / {format_size(total)}  ({pct_txt})"
-        c.create_text(w // 2, h // 2, text=size_txt, fill="white",
-                      anchor="center", font=("Segoe UI", 9))
+        # Texto principal
+        pct_txt  = f"{pct * 100:.1f}%"
+        used_txt = format_size(used)
+        tot_txt  = format_size(total)
+        free_txt = format_size(total - used)
+
+        text_y = h // 2 - 8   # centrado verticalmente sobre la barra
+
+        # Lado izquierdo: unidad
+        c.create_text(16, text_y, anchor="w",
+                      text=f"  {drive}",
+                      fill=theme.TEXT_PRIMARY, font=("Segoe UI", 10, "bold"))
+
+        # Centro: used / total
+        c.create_text(w // 2, text_y, anchor="center",
+                      text=f"{used_txt}  /  {tot_txt}",
+                      fill=theme.TEXT_PRIMARY, font=("Segoe UI", 10, "bold"))
+
+        # Lado derecho: libre
+        c.create_text(w - 16, text_y, anchor="e",
+                      text=f"Libre: {free_txt}",
+                      fill=theme.TEXT_SECONDARY, font=("Segoe UI", 9))
+
+        # Porcentaje encima de la barra, junto al borde derecho
+        c.create_text(w - 16, bar_y1 - 2, anchor="se",
+                      text=pct_txt,
+                      fill=color, font=("Segoe UI", 9, "bold"))
+
+    @staticmethod
+    def _rounded_rect(canvas, x1, y1, x2, y2, r, **kwargs):
+        """Dibuja un rectángulo con esquinas redondeadas."""
+        points = [
+            x1+r, y1,  x2-r, y1,
+            x2,   y1,  x2,   y1+r,
+            x2,   y2-r, x2,  y2,
+            x2-r, y2,  x1+r, y2,
+            x1,   y2,  x1,   y2-r,
+            x1,   y1+r, x1,  y1,
+        ]
+        return canvas.create_polygon(points, smooth=True, **kwargs)

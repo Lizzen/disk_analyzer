@@ -4,9 +4,12 @@ import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+import ui.theme as theme
+
 
 class Toolbar(ttk.Frame):
     def __init__(self, parent, on_scan, on_cancel, **kwargs):
+        kwargs.setdefault("style", "Surface.TFrame")
         super().__init__(parent, **kwargs)
         self._on_scan   = on_scan
         self._on_cancel = on_cancel
@@ -15,23 +18,26 @@ class Toolbar(ttk.Frame):
     def _build(self):
         self.columnconfigure(1, weight=1)
 
-        ttk.Label(self, text="Ruta:").grid(row=0, column=0, padx=(8, 4), pady=6)
+        # Icono de disco + label
+        lbl = ttk.Label(self, text="  Ruta:", style="Toolbar.TLabel")
+        lbl.grid(row=0, column=0, padx=(10, 4), pady=8)
 
         self._path_var = tk.StringVar(value="C:\\")
         self._entry = ttk.Entry(self, textvariable=self._path_var)
-        self._entry.grid(row=0, column=1, sticky="ew", padx=4, pady=6)
+        self._entry.grid(row=0, column=1, sticky="ew", padx=(0, 4), pady=8)
 
         self._btn_browse = ttk.Button(self, text="...", width=3,
                                       command=self._browse)
-        self._btn_browse.grid(row=0, column=2, padx=(0, 4), pady=6)
+        self._btn_browse.grid(row=0, column=2, padx=(0, 6), pady=8)
 
-        self._btn_scan = ttk.Button(self, text="Escanear",
+        self._btn_scan = ttk.Button(self, text="⬤  Escanear",
+                                    style="Accent.TButton",
                                     command=self._do_scan)
-        self._btn_scan.grid(row=0, column=3, padx=4, pady=6)
+        self._btn_scan.grid(row=0, column=3, padx=(0, 4), pady=8)
 
-        self._btn_cancel = ttk.Button(self, text="Cancelar",
+        self._btn_cancel = ttk.Button(self, text="✕  Cancelar",
                                       command=self._on_cancel, state="disabled")
-        self._btn_cancel.grid(row=0, column=4, padx=(0, 8), pady=6)
+        self._btn_cancel.grid(row=0, column=4, padx=(0, 10), pady=8)
 
     # ── API pública ────────────────────────────────────────────────────────────
 
@@ -63,4 +69,4 @@ class Toolbar(ttk.Frame):
         if os.path.isdir(path):
             self._on_scan(path)
         else:
-            tk.messagebox.showerror("Error", f"La ruta no existe:\n{path}")
+            messagebox.showerror("Error", f"La ruta no existe:\n{path}")

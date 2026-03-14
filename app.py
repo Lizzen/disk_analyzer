@@ -21,9 +21,11 @@ from ui.file_table import FileTable
 from ui.filter_bar import FilterBar
 from ui.status_bar import StatusBar
 from ui.dialogs   import ConfirmDeleteDialog, DuplicatesDialog
+import ui.theme as theme
 
-POLL_INTERVAL_MS = 50   # cada cuánto ms se revisa la queue
-FLUSH_EVERY_MS   = 80   # cada cuánto ms se vacía el batch de filas
+POLL_INTERVAL_MS = 40    # cada cuánto ms se revisa la queue
+FLUSH_EVERY_MS   = 60    # cada cuánto ms se vacía el batch de filas
+POLL_MAX_MSGS    = 500   # máximo mensajes a consumir por tick
 
 
 class App(ttk.Frame):
@@ -62,8 +64,8 @@ class App(ttk.Frame):
 
         # ── Contenido principal (PanedWindow) ──
         self._paned = tk.PanedWindow(self, orient="horizontal",
-                                      sashrelief="raised", sashwidth=5,
-                                      bg="#3c3c3c")
+                                      sashrelief="flat", sashwidth=4,
+                                      bg=theme.SASH)
         self._paned.pack(fill="both", expand=True)
 
         # Panel izquierdo: árbol de carpetas
@@ -119,11 +121,7 @@ class App(ttk.Frame):
         self._root.bind("<Control-c>", self._key_copy)
 
     def _apply_theme(self):
-        style = ttk.Style()
-        try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass
+        theme.apply(self._root)
 
     # ── Escaneo ───────────────────────────────────────────────────────────────
 
@@ -156,6 +154,7 @@ class App(ttk.Frame):
 
     def _cancel_scan(self):
         self._cancel_evt.set()
+        self._root.title("Disk Analyzer")
         self._status.set_message("Escaneo cancelado.")
         self._toolbar.set_scanning(False)
         self._scanning = False
@@ -164,7 +163,7 @@ class App(ttk.Frame):
 
     def _poll_queue(self):
         try:
-            for _ in range(200):   # consumir hasta 200 msgs por tick
+            for _ in range(POLL_MAX_MSGS):
                 msg = self._msg_queue.get_nowait()
                 self._dispatch(msg)
         except queue.Empty:
@@ -221,10 +220,30 @@ class App(ttk.Frame):
             self._scan_result.files.append(entry)
             self._file_table.add_entry(entry)
 
+        elif t == "file_batch":
+            files = self._scan_result.files
+            add   = self._file_table.add_entry
+            for m in msg["entries"]:
+                entry = FileEntry(
+                    path=m["path"],
+                    name=m["name"],
+                    size=m["size"],
+                    extension=m["extension"],
+                    category=m["category"],
+                    is_cache=m["is_cache"],
+                    parent_dir=m["parent_dir"],
+                )
+                files.append(entry)
+                add(entry)
+
         elif t == "progress":
             done  = msg["done"]
-            total = self._n_top if self._n_top > 0 else msg.get("total", 0)
+            total = msg.get("total") or self._n_top
             self._status.update_progress(done, total, msg["current"], msg["bytes"])
+            # Porcentaje en el título de ventana
+            if total > 0:
+                pct = int(done / total * 100)
+                self._root.title(f"Disk Analyzer  [{pct}%]")
 
         elif t == "done":
             self._on_scan_done(msg)
@@ -239,17 +258,22 @@ class App(ttk.Frame):
         self._scan_result.elapsed     = msg["elapsed"]
         self._scan_result.duplicates  = msg["duplicates"]
 
+        # Volcar upserts pendientes del árbol antes de recalcular porcentajes
+        self._tree_panel.flush_upserts()
         self._tree_panel.set_total(msg["total_bytes"])
-        # Re-renderizar tamaños con el total correcto
+
+        # Re-renderizar porcentajes con el total correcto (solo actualiza, no inserta)
         for path, node in self._scan_result.folders.items():
             self._tree_panel.upsert_folder(
                 path, node.parent or "", node.size, node.file_count
             )
+        self._tree_panel.flush_upserts()
 
-        # Vaciar el último batch pendiente
+        # Vaciar el último batch pendiente de archivos
         self._file_table.flush_batch()
 
         self._toolbar.set_scanning(False)
+        self._root.title("Disk Analyzer")
         self._status.update_stats(
             folders=len(self._scan_result.folders),
             files=len(self._scan_result.files),

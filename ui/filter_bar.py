@@ -3,6 +3,8 @@
 import tkinter as tk
 from tkinter import ttk
 
+import ui.theme as theme
+
 SIZE_OPTIONS = {
     "Cualquier tamaño": 0,
     "> 1 MB":     1 * 1024 * 1024,
@@ -33,37 +35,46 @@ class FilterBar(ttk.Frame):
     """
 
     def __init__(self, parent, on_change, **kwargs):
+        kwargs.setdefault("style", "Panel.TFrame")
         super().__init__(parent, **kwargs)
         self._on_change = on_change
         self._build()
 
     def _build(self):
-        ttk.Label(self, text="Tipo:").pack(side="left", padx=(8, 2))
+        # Padding interno
+        inner = ttk.Frame(self, style="Panel.TFrame")
+        inner.pack(fill="x", padx=8, pady=5)
+
+        ttk.Label(inner, text="Tipo", style="Secondary.TLabel").pack(
+            side="left", padx=(0, 3))
 
         self._cat_var = tk.StringVar(value="Todos")
-        cat_combo = ttk.Combobox(self, textvariable=self._cat_var,
-                                  values=CATEGORIES, state="readonly", width=22)
-        cat_combo.pack(side="left", padx=(0, 8))
+        cat_combo = ttk.Combobox(inner, textvariable=self._cat_var,
+                                  values=CATEGORIES, state="readonly", width=20)
+        cat_combo.pack(side="left", padx=(0, 12))
         self._cat_var.trace_add("write", self._fire)
 
-        ttk.Label(self, text="Tamaño:").pack(side="left", padx=(0, 2))
+        ttk.Label(inner, text="Tamaño", style="Secondary.TLabel").pack(
+            side="left", padx=(0, 3))
 
         self._size_var = tk.StringVar(value="Cualquier tamaño")
-        size_combo = ttk.Combobox(self, textvariable=self._size_var,
+        size_combo = ttk.Combobox(inner, textvariable=self._size_var,
                                    values=list(SIZE_OPTIONS.keys()),
-                                   state="readonly", width=16)
-        size_combo.pack(side="left", padx=(0, 8))
+                                   state="readonly", width=15)
+        size_combo.pack(side="left", padx=(0, 12))
         self._size_var.trace_add("write", self._fire)
 
-        ttk.Label(self, text="Nombre:").pack(side="left", padx=(0, 2))
+        ttk.Label(inner, text="Nombre", style="Secondary.TLabel").pack(
+            side="left", padx=(0, 3))
 
         self._name_var = tk.StringVar()
         self._name_var.trace_add("write", self._fire)
-        ttk.Entry(self, textvariable=self._name_var, width=20).pack(
-            side="left", padx=(0, 8))
+        name_entry = ttk.Entry(inner, textvariable=self._name_var, width=20)
+        name_entry.pack(side="left", padx=(0, 10))
 
-        ttk.Button(self, text="Limpiar", command=self.reset).pack(
-            side="left", padx=(0, 8))
+        # Botón limpiar con estilo mínimo
+        clear_btn = ttk.Button(inner, text="✕ Limpiar", command=self.reset)
+        clear_btn.pack(side="left")
 
     # ── API pública ───────────────────────────────────────────────────────────
 

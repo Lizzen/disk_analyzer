@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# VS Code / Editor
+.vscode/
+
+# Archivos del sistema operativo (basura)
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Logs y bases de datos locales temporales
+*.log
+*.sqlite3
+
+# Compilación / Distribución (si luego usas pyinstaller/cx_Freeze)
+build/
+dist/
+*.spec

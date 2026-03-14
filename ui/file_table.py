@@ -1,61 +1,66 @@
 """Tabla principal de archivos con filtrado, ordenamiento y menú contextual."""
 
-import os
 import tkinter as tk
 from tkinter import ttk
 
 from core.models import FileEntry
 from utils.formatters import format_size
 from core.trash import open_in_explorer
+import ui.theme as theme
 
 # Iconos Unicode por categoría
 CAT_ICONS = {
-    "Videos":                 "🎬",
-    "Imagenes":               "🖼",
-    "Audio":                  "🎵",
-    "Documentos":             "📄",
-    "Instaladores/ISO":       "📦",
-    "Temporales/Cache":       "🗑",
-    "Desarrollo (compilados)":"⚙",
-    "Bases de datos":         "🗄",
-    "Otros":                  "📎",
+    "Videos":                  "🎬",
+    "Imagenes":                "🖼",
+    "Audio":                   "🎵",
+    "Documentos":              "📄",
+    "Instaladores/ISO":        "📦",
+    "Temporales/Cache":        "🗑",
+    "Desarrollo (compilados)": "⚙",
+    "Bases de datos":          "🗄",
+    "Otros":                   "📎",
 }
 
-# Etiquetas de color por tamaño
-_COLOR_TAGS = [
-    ("huge",   1024**3,         "#c0392b", "white"),   # >1 GB
-    ("large",  100 * 1024**2,   "#e67e22", "white"),   # >100 MB
-    ("medium", 10  * 1024**2,   "#f39c12", "black"),   # >10 MB
-    ("cache",  0,               "#888888", "white"),   # cache
+COLUMNS = [
+    ("name",     "Nombre",    260, "w"),
+    ("size",     "Tamaño",     90, "e"),
+    ("category", "Tipo",      150, "w"),
+    ("ext",      "Extensión",  70, "center"),
+    ("path",     "Ruta",      380, "w"),
 ]
 
-# Columnas: (id, encabezado, ancho, anchor)
-COLUMNS = [
-    ("name",     "Nombre",     260, "w"),
-    ("size",     "Tamaño",      90, "e"),
-    ("category", "Tipo",       150, "w"),
-    ("ext",      "Extensión",   70, "center"),
-    ("path",     "Ruta",       380, "w"),
-]
+# Máximo de filas renderizadas en el Treeview en cualquier momento.
+# Con más datos se muestra un aviso; el usuario puede aplicar filtros para reducir.
+DISPLAY_LIMIT = 3_000
 
 
 class FileTable(ttk.Frame):
     """
-    Tabla de archivos.
-    on_delete([paths]) se llama al pedir borrado desde el menú contextual.
+    Tabla de archivos con virtual display.
+
+    Internamente guarda _all_entries (todas) y _visible_entries (filtradas+ordenadas).
+    Solo se renderizan las primeras DISPLAY_LIMIT filas para mantener la UI fluida.
+
+    Mapa _iid_map: path → iid permite remove_paths en O(k) en lugar de O(n).
     """
 
     def __init__(self, parent, on_delete=None, **kwargs):
         super().__init__(parent, **kwargs)
         self._on_delete = on_delete
-        self._all_entries: list[FileEntry] = []
-        self._visible_entries: list[FileEntry] = []
-        self._sort_col = "size"
-        self._sort_rev = True
-        self._filter_cat = "Todos"
-        self._filter_min = 0
+
+        self._all_entries:     list[FileEntry] = []
+        self._visible_entries: list[FileEntry] = []  # filtradas + ordenadas
+        self._iid_map:         dict[str, str]  = {}  # path → tree iid
+
+        self._sort_col  = "size"
+        self._sort_rev  = True
+        self._filter_cat  = "Todos"
+        self._filter_min  = 0
         self._filter_name = ""
+
         self._pending_batch: list[FileEntry] = []
+        self._row_counter = 0
+
         self._build()
 
     # ── construcción ─────────────────────────────────────────────────────────
@@ -66,22 +71,21 @@ class FileTable(ttk.Frame):
 
         col_ids = [c[0] for c in COLUMNS]
         self._tree = ttk.Treeview(
-            self,
-            columns=col_ids,
-            show="headings",
-            selectmode="extended",
+            self, columns=col_ids, show="headings", selectmode="extended",
         )
 
         for col_id, heading, width, anchor in COLUMNS:
             self._tree.heading(col_id, text=heading,
                                command=lambda c=col_id: self._sort_by(c))
-            self._tree.column(col_id, width=width, anchor=anchor, stretch=(col_id == "path"))
+            self._tree.column(col_id, width=width, anchor=anchor,
+                              stretch=(col_id == "path"))
 
-        # Color tags
-        self._tree.tag_configure("huge",   background="#c0392b", foreground="white")
-        self._tree.tag_configure("large",  background="#e67e22", foreground="white")
-        self._tree.tag_configure("medium", background="#f39c12", foreground="black")
-        self._tree.tag_configure("cache",  background="#555555", foreground="#cccccc")
+        self._tree.tag_configure("huge",   background=theme.TAG_HUGE_BG,   foreground=theme.TEXT_PRIMARY)
+        self._tree.tag_configure("large",  background=theme.TAG_LARGE_BG,  foreground=theme.TEXT_PRIMARY)
+        self._tree.tag_configure("medium", background=theme.TAG_MEDIUM_BG, foreground=theme.TEXT_PRIMARY)
+        self._tree.tag_configure("cache",  background=theme.TAG_CACHE_BG,  foreground=theme.TAG_CACHE_FG)
+        self._tree.tag_configure("odd",    background=theme.TAG_ODD_BG,    foreground=theme.TEXT_PRIMARY)
+        self._tree.tag_configure("even",   background=theme.TAG_EVEN_BG,   foreground=theme.TEXT_PRIMARY)
 
         vsb = ttk.Scrollbar(self, orient="vertical",   command=self._tree.yview)
         hsb = ttk.Scrollbar(self, orient="horizontal", command=self._tree.xview)
@@ -91,17 +95,29 @@ class FileTable(ttk.Frame):
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
 
-        self._tree.bind("<Button-3>",        self._show_context_menu)
-        self._tree.bind("<Double-Button-1>",  self._on_double_click)
+        # Label de aviso cuando hay más entradas que DISPLAY_LIMIT
+        self._overflow_label = tk.Label(
+            self, text="", bg=theme.BG_SURFACE, fg=theme.TEXT_SECONDARY,
+            font=theme.FONT_SMALL, anchor="w", padx=8,
+        )
+        self._overflow_label.grid(row=2, column=0, columnspan=2, sticky="ew")
+        self._overflow_label.grid_remove()   # oculto por defecto
 
-        # Menú contextual
-        self._ctx = tk.Menu(self, tearoff=False)
-        self._ctx.add_command(label="Abrir en Explorador",    command=self._ctx_open)
+        self._tree.bind("<Button-3>",       self._show_context_menu)
+        self._tree.bind("<Double-Button-1>", self._on_double_click)
+
+        self._ctx = tk.Menu(
+            self, tearoff=False,
+            bg=theme.BG_SURFACE, fg=theme.TEXT_PRIMARY,
+            activebackground=theme.ACCENT, activeforeground="white",
+            relief="flat", borderwidth=1,
+        )
+        self._ctx.add_command(label="  Abrir en Explorador",     command=self._ctx_open)
         self._ctx.add_separator()
-        self._ctx.add_command(label="Mover a Papelera",       command=self._ctx_trash)
-        self._ctx.add_command(label="Eliminar permanentemente", command=self._ctx_delete_perm)
+        self._ctx.add_command(label="  Mover a Papelera",        command=self._ctx_trash)
+        self._ctx.add_command(label="  Eliminar permanentemente", command=self._ctx_delete_perm)
         self._ctx.add_separator()
-        self._ctx.add_command(label="Copiar ruta",            command=self._ctx_copy)
+        self._ctx.add_command(label="  Copiar ruta",             command=self._ctx_copy)
 
     # ── API pública ───────────────────────────────────────────────────────────
 
@@ -110,23 +126,38 @@ class FileTable(ttk.Frame):
         self._all_entries.clear()
         self._visible_entries.clear()
         self._pending_batch.clear()
+        self._iid_map.clear()
+        self._row_counter = 0
+        self._overflow_label.grid_remove()
 
     def add_entry(self, entry: FileEntry):
-        """Añade una entrada al buffer de batch. Llamar flush_batch() para mostrar."""
+        """Añade al buffer de batch. flush_batch() vuelca al Treeview."""
         self._all_entries.append(entry)
         if self._matches_filter(entry):
             self._pending_batch.append(entry)
 
-    def flush_batch(self):
-        """Inserta en el Treeview el batch acumulado (hasta 300 items por llamada)."""
-        batch = self._pending_batch[:300]
-        self._pending_batch = self._pending_batch[300:]
+    def flush_batch(self) -> bool:
+        """
+        Inserta hasta 600 entradas del batch en el Treeview.
+        Solo renderiza hasta DISPLAY_LIMIT filas (las de mayor tamaño).
+        Retorna True si aún quedan entradas pendientes.
+        """
+        if not self._pending_batch:
+            return False
+
+        batch = self._pending_batch[:600]
+        self._pending_batch = self._pending_batch[600:]
+
+        rendered = len(self._iid_map)
 
         for entry in batch:
             self._visible_entries.append(entry)
-            self._insert_row(entry)
+            if rendered < DISPLAY_LIMIT:
+                self._insert_row(entry)
+                rendered += 1
 
-        return bool(self._pending_batch)  # True si aún queda
+        self._update_overflow_label()
+        return bool(self._pending_batch)
 
     def apply_filters(self, category: str, min_bytes: int, name_pattern: str):
         self._filter_cat  = category
@@ -136,23 +167,28 @@ class FileTable(ttk.Frame):
 
     def filter_by_folder(self, folder_path: str):
         """Muestra solo archivos dentro de folder_path (y sus subdirectorios)."""
-        self._tree.delete(*self._tree.get_children())
+        self._filter_cat  = "Todos"
+        self._filter_min  = 0
+        self._filter_name = ""
         self._visible_entries = [
             e for e in self._all_entries
-            if e.path.startswith(folder_path) and self._matches_filter(e)
+            if e.path.startswith(folder_path)
         ]
         self._visible_entries.sort(key=lambda e: e.size, reverse=True)
-        for entry in self._visible_entries:
-            self._insert_row(entry)
+        self._render_visible()
 
     def remove_paths(self, paths: set):
-        """Elimina rutas de la tabla y del almacén interno."""
+        """Elimina rutas de la tabla. O(k) gracias a _iid_map."""
         self._all_entries     = [e for e in self._all_entries     if e.path not in paths]
         self._visible_entries = [e for e in self._visible_entries if e.path not in paths]
-        for iid in list(self._tree.get_children()):
-            vals = self._tree.item(iid, "values")
-            if vals and vals[4] in paths:   # columna 'path'
-                self._tree.delete(iid)
+        for path in paths:
+            iid = self._iid_map.pop(path, None)
+            if iid:
+                try:
+                    self._tree.delete(iid)
+                except tk.TclError:
+                    pass
+        self._update_overflow_label()
 
     @property
     def entry_count(self) -> int:
@@ -170,39 +206,67 @@ class FileTable(ttk.Frame):
         return True
 
     def _rebuild_visible(self):
-        self._tree.delete(*self._tree.get_children())
+        """Recalcula visible_entries y re-renderiza respetando DISPLAY_LIMIT."""
         self._visible_entries = [e for e in self._all_entries if self._matches_filter(e)]
         self._visible_entries.sort(
             key=lambda e: getattr(e, self._sort_col, e.size),
             reverse=self._sort_rev,
         )
-        for entry in self._visible_entries:
+        self._render_visible()
+
+    def _render_visible(self):
+        """Borra el Treeview y renderiza las primeras DISPLAY_LIMIT entradas."""
+        # delete es mucho más rápido que delete(*children) cuando hay miles
+        self._tree.delete(*self._tree.get_children())
+        self._iid_map.clear()
+        self._row_counter = 0
+
+        for entry in self._visible_entries[:DISPLAY_LIMIT]:
             self._insert_row(entry)
 
-    def _insert_row(self, entry: FileEntry):
+        self._update_overflow_label()
+
+    def _insert_row(self, entry: FileEntry) -> str:
         icon = CAT_ICONS.get(entry.category, "📎")
         tag  = self._tag_for(entry)
         vals = (
-            f"{icon} {entry.name}",
+            f"{icon}  {entry.name}",
             format_size(entry.size),
             entry.category,
             entry.extension,
             entry.path,
         )
         try:
-            self._tree.insert("", "end", values=vals, tags=(tag,))
+            iid = self._tree.insert("", "end", values=vals, tags=(tag,))
+            self._iid_map[entry.path] = iid
+            self._row_counter += 1
+            return iid
         except tk.TclError:
-            pass
+            return ""
 
     def _tag_for(self, entry: FileEntry) -> str:
         if entry.is_cache:
             return "cache"
-        for tag, threshold, *_ in _COLOR_TAGS:
-            if tag == "cache":
-                continue
-            if entry.size >= threshold:
-                return tag
-        return ""
+        if entry.size >= 1024 ** 3:
+            return "huge"
+        if entry.size >= 100 * 1024 ** 2:
+            return "large"
+        if entry.size >= 10 * 1024 ** 2:
+            return "medium"
+        return "odd" if self._row_counter % 2 == 0 else "even"
+
+    def _update_overflow_label(self):
+        total   = len(self._visible_entries)
+        shown   = min(total, DISPLAY_LIMIT)
+        hidden  = total - shown
+        if hidden > 0:
+            self._overflow_label.config(
+                text=f"  Mostrando {shown:,} de {total:,} archivos  —  "
+                     f"usa los filtros para reducir la selección"
+            )
+            self._overflow_label.grid()
+        else:
+            self._overflow_label.grid_remove()
 
     def _sort_by(self, col: str):
         if self._sort_col == col:
@@ -210,6 +274,9 @@ class FileTable(ttk.Frame):
         else:
             self._sort_col = col
             self._sort_rev = (col == "size")
+        for col_id, heading, *_ in COLUMNS:
+            arrow = ("  ▼" if self._sort_rev else "  ▲") if col_id == col else ""
+            self._tree.heading(col_id, text=heading + arrow)
         self._rebuild_visible()
 
     def _selected_paths(self) -> list[str]:
@@ -217,7 +284,7 @@ class FileTable(ttk.Frame):
         for iid in self._tree.selection():
             vals = self._tree.item(iid, "values")
             if vals:
-                paths.append(vals[4])  # columna 'path'
+                paths.append(vals[4])
         return paths
 
     def _show_context_menu(self, event):
@@ -236,7 +303,7 @@ class FileTable(ttk.Frame):
     def _ctx_open(self):
         for p in self._selected_paths():
             open_in_explorer(p)
-            break  # solo el primero
+            break
 
     def _ctx_trash(self):
         paths = self._selected_paths()

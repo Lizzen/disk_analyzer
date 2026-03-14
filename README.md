@@ -1,103 +1,152 @@
-# Disk Analyzer GUI
+# Disk Analyzer (DKA)
 
-Analizador de disco con interfaz gráfica para Windows. Muestra qué ocupa espacio en tu disco, permite filtrar por tipo/tamaño/nombre, eliminar archivos y abrir carpetas en el Explorador.
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: Non-Commercial](https://img.shields.io/badge/License-Non_Commercial-red.svg)](#licencia)
+[![OS: Windows](https://img.shields.io/badge/OS-Windows-lightgrey.svg)]()
+
+Un analizador de espacio en disco con interfaz gráfica (GUI) rápido y ligero para Windows. Construido íntegramente con Python y `tkinter`, te permite descubrir rápidamente qué archivos y carpetas están consumiendo el almacenamiento de tu disco.
+
+---
+
+## Características Principales
+
+- **Escaneo Multihilo Rápido:** Utiliza `ThreadPoolExecutor` para escanear directorios en paralelo y mostrar resultados en tiempo real.
+- **Visualización en Árbol y Tabla:** Explora tu disco mediante una vista jerárquica de carpetas y una tabla detallada de archivos.
+- **Filtrado Dinámico:** Filtra instantáneamente por:
+  - **Tipo de archivo:** Videos, Imágenes, Audio, Documentos, Archivos Comprimidos, etc.
+  - **Tamaño:** >1 MB, >100 MB, >1 GB, etc.
+  - **Nombre:** Búsqueda en tiempo real (insensible a mayúsculas).
+- **Gestión de Archivos:** Envía archivos a la Papelera de Reciclaje (con soporte de fallback) o elimínalos permanentemente desde la app.
+- **Sin Dependencias Pesadas:** Solo utiliza módulos de la biblioteca estándar de Python (con soporte opcional de `pywin32` para la Papelera).
+- **Detección de Duplicados:** Encuentra y gestiona archivos duplicados para liberar aún más espacio.
+
+---
+
+## Capturas de Pantalla
+
+*(Añade aquí un par de capturas de pantalla de tu aplicación funcionando)*
+<!-- 
+![Pantalla principal](docs/screenshot1.png)
+![Filtrado de archivos](docs/screenshot2.png) 
+-->
+
+---
 
 ## Requisitos
 
-- Python 3.10 o superior (incluido con Windows 11)
-- Sin dependencias externas — solo módulos de la librería estándar
+- **Sistema Operativo:** Windows 10 / 11
+- **Python:** 3.10 o superior 
 
-> **pywin32** (ya instalado en el sistema) se usa para la Papelera de reciclaje. Si no está disponible, hay un fallback automático vía `ctypes`.
+> **Nota sobre pywin32:** Se utiliza para operaciones nativas de la Papelera de reciclaje mediante la API de Windows. Si no está instalado o disponible, la aplicación utiliza un fallback automático vía `ctypes`.
 
-## Uso
+---
 
-```bash
-cd Desktop\disk_analyzer_gui
-python main.py
-```
+## Instalación y Uso
 
-## Estructura del proyecto
+1. Clona este repositorio o descarga el código fuente:
+   ```bash
+   git clone https://github.com/tu-usuario/disk_analyzer.git
+   cd disk_analyzer
+   ```
 
-```
-disk_analyzer_gui/
-├── main.py              # Punto de entrada
+2. Ejecuta la aplicación de escritorio:
+   ```bash
+   python main.py
+   ```
+
+---
+
+## Estructura del Proyecto
+
+El código está organizado de forma modular para separar la interfaz gráfica de la lógica de escaneo.
+
+```text
+disk_analyzer/
+├── main.py              # Punto de entrada de la aplicación
 ├── app.py               # Clase principal App (lógica de orquestación)
-├── core/
-│   ├── models.py        # Dataclasses: FileEntry, FolderNode, ScanResult
-│   ├── scanner.py       # Motor de escaneo paralelo (ThreadPoolExecutor)
-│   └── trash.py         # Operaciones de borrado seguro
-├── ui/
-│   ├── toolbar.py       # Barra superior: ruta + botones
-│   ├── disk_bar.py      # Barra gráfica de uso del disco
-│   ├── tree_panel.py    # Panel izquierdo: árbol de carpetas
-│   ├── file_table.py    # Panel derecho: tabla de archivos
-│   ├── filter_bar.py    # Filtros: tipo, tamaño, nombre
-│   ├── status_bar.py    # Barra inferior: progreso + estadísticas
-│   └── dialogs.py       # Diálogos de confirmación y duplicados
-└── utils/
-    └── formatters.py    # format_size(), format_pct()
+├── core/                # Lógica de negocio y motor de escaneo
+│   ├── models.py        # Clases de datos: FileEntry, FolderNode, ScanResult
+│   ├── scanner.py       # Motor de escaneo paralelo
+│   └── trash.py         # Operaciones seguras de Papelera y borrado
+├── ui/                  # Componentes de la Interfaz Gráfica (tkinter)
+│   ├── toolbar.py       # Barra superior de navegación y controles
+│   ├── disk_bar.py      # Barra de progreso visual del uso del disco
+│   ├── tree_panel.py    # Panel izquierdo (Árbol jerárquico)
+│   ├── file_table.py    # Panel derecho (Tabla de archivos)
+│   ├── filter_bar.py    # Barra de filtros (tipo, tamaño, búsqueda)
+│   ├── status_bar.py    # Barra inferior con métricas y progreso
+│   └── dialogs.py       # Ventanas modales (duplicados, confirmaciones)
+└── utils/               # Utilidades y ayuda
+    └── formatters.py    # Formateo de bytes y porcentajes
 ```
 
-## Arquitectura
+---
 
-La aplicación separa completamente el escaneo (hilo worker) de la UI (hilo principal de tkinter).
+## Arquitectura de Escaneo en Tiempo Real
 
-```
-Hilo Worker (DiskScanner)
-    │
-    │  queue.Queue (mensajes: folder, file, progress, done)
-    ▼
-App._poll_queue()   [cada 50 ms, via root.after()]
-    │
-    ├── TreePanel.upsert_folder()  → árbol en tiempo real
-    ├── FileTable.add_entry()      → buffer de batch
-    └── StatusBar.update_progress()
+La aplicación separa completamente el escaneo de archivos (Hilo Worker) de la Interfaz Gráfica (Hilo Principal) para evitar que la aplicación se congele.
 
-App._flush_loop()   [cada 80 ms]
-    └── FileTable.flush_batch()   → inserta ≤300 filas por tick
+```mermaid
+graph TD
+    A[Hilo Worker: DiskScanner] -->|queue.Queue| B(Mensajes: folder, file, progress)
+    B --> C[App._poll_queue - cada 50ms]
+    C --> D[TreePanel: Actualiza el árbol]
+    C --> E[FileTable: Agrega al buffer batch]
+    C --> F[StatusBar: Actualiza progreso]
+    G[App._flush_loop - cada 80ms] --> H[FileTable: Dibuja ≤300 filas en UI]
 ```
 
-### Tipos de mensaje del scanner
+### Tipos de Mensajes del Escáner
 
-| type       | campos clave                                      |
-|------------|---------------------------------------------------|
-| `start`    | `root`, `n_top`                                   |
-| `folder`   | `path`, `parent`, `size`, `file_count`            |
-| `file`     | `path`, `name`, `size`, `category`, `extension`, `is_cache` |
-| `progress` | `done`, `total`, `current`, `bytes`               |
-| `done`     | `total_bytes`, `elapsed`, `duplicates`            |
-| `error`    | `path`, `msg`                                     |
+| Tipo de Mensaje | Campos Clave Contenidos |
+|-----------------|-------------------------|
+| `start` | `root`, `n_top` |
+| `folder` | `path`, `parent`, `size`, `file_count` |
+| `file` | `path`, `name`, `size`, `category`, `extension`, `is_cache` |
+| `progress` | `done`, `total`, `current`, `bytes` |
+| `done` | `total_bytes`, `elapsed`, `duplicates` |
+| `error` | `path`, `msg` |
 
-## Funcionalidades
+---
 
-### Escaneo
-- Escaneo paralelo con `ThreadPoolExecutor` (16 hilos por defecto)
-- El árbol de carpetas se construye en tiempo real mientras escanea
-- Cancelable en cualquier momento con el botón **Cancelar** o cerrando la ventana
+## Accesos Directos y Acciones UI
 
-### Filtros (en tiempo real)
-| Filtro   | Opciones                                                      |
-|----------|---------------------------------------------------------------|
-| Tipo     | Todos / Videos / Imágenes / Audio / Documentos / ...         |
-| Tamaño   | Cualquier tamaño / >1 MB / >10 MB / >100 MB / >500 MB / >1 GB |
-| Nombre   | Búsqueda de texto libre (substring, no distingue mayúsculas) |
+La aplicación soporta navegación fluida por teclado y menús contextuales:
 
-### Navegación
-- Click en carpeta del árbol → filtra la tabla a esa carpeta y sus subdirectorios
-- Doble click en archivo → abre su ubicación en el Explorador de Windows
-- Clic derecho en árbol/tabla → menú contextual
+| Acción | Atajo / Interacción |
+|--------|---------------------|
+| **Abrir en Explorador** | Doble click en el archivo |
+| **Mover a Papelera** | Tecla `Suprimir` (`Delete`) |
+| **Eliminar Permanente** | Clic derecho > Menú contextual |
+| **Copiar Ruta** | `Ctrl + C` |
+| **Nuevo Escaneo** | `F5` o Botón de Refrescar |
+| **Explorar Subcarpetas** | Clic izquierdo en carpeta del árbol |
 
-### Acciones
-| Acción                       | Atajo          |
-|------------------------------|----------------|
-| Abrir en Explorador          | Doble click    |
-| Mover a Papelera             | `Delete`       |
-| Eliminar permanentemente     | Menú contextual |
-| Copiar ruta al portapapeles  | `Ctrl+C`       |
-| Nuevo escaneo                | `F5`           |
-| Ver duplicados               | Menú Ver       |
+---
 
-### Color coding en la tabla
+## Contribuir
+
+¡Las contribuciones son bienvenidas! Si deseas mejorar este proyecto:
+
+1. Haz un *Fork* del repositorio.
+2. Crea una rama para tu característica (`git checkout -b feature/NuevaCaracteristica`).
+3. Haz *Commit* de tus cambios (`git commit -m 'Añade una nueva característica'`).
+4. Haz *Push* a la rama (`git push origin feature/NuevaCaracteristica`).
+5. Abre un **Pull Request**.
+
+Si encuentras algún error o tienes sugerencias, por favor abre un _Issue_ en este repositorio.
+
+---
+
+## Licencia
+
+Este proyecto se distribuye bajo una **Licencia Gratuita y No Comercial**. 
+
+- ✔️ **Puedes:** Usar la herramienta libremente, ver el código, editarlo y compartir tus propias mejoras con la comunidad.
+- ❌ **No puedes:** Vender este software, distribuirlo cobrando dinero, ocultarlo tras muros de pago o integrarlo en productos comerciales bajo ninguna circunstancia. Cualquier versión modificada **tiene obligatoriamente que seguir siendo gratuita**.
+- ⚠️ **Obligatorio:** Siempre debes mantener el aviso de derechos de autor original (`Copyright (c) Lizzen`) y dar el crédito correspondiente si distribuyes o modificas el código.
+
+Consulta el archivo `LICENSE` para leer los términos completos.
 | Color      | Significado      |
 |------------|------------------|
 | Rojo       | > 1 GB           |

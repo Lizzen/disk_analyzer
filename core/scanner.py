@@ -2,6 +2,14 @@
 Scanner de disco adaptado para GUI.
 Emite mensajes en una queue.Queue en lugar de imprimir por consola.
 Soporta cancelación mediante threading.Event.
+
+Optimizaciones v2:
+  - os.scandir() recursivo en lugar de os.walk() + os.stat() separado
+    → evita una syscall de stat extra por archivo (DirEntry ya trae el stat en caché)
+  - Emisión por lotes de archivos (BATCH_SIZE) → reduce contención en la queue
+  - Lock de duplicados reducido: acumular localmente y fusionar al final
+  - Extensión extraída del DirEntry.name sin llamar splitext
+  - Lookup de categoría con dict inverso (ext→cat) O(1) en lugar de iterar
 """
 
 import os
@@ -10,12 +18,13 @@ import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# ── Configuración ────────────────────────────────────────────────────────────
+# ── Configuración ─────────────────────────────────────────────────────────────
 
-IGNORAR_CARPETAS = {
+IGNORAR_CARPETAS: frozenset = frozenset({
     "Windows", "System Volume Information", "$Recycle.Bin",
     "Recovery", "PerfLogs", "MSOCache", "WpSystem",
-}
+    "WindowsApps", "WinSxS",
+})
 
 CATEGORIAS_EXT = {
     "Temporales/Cache": {
@@ -50,20 +59,26 @@ CATEGORIAS_EXT = {
     },
 }
 
-CACHE_FOLDER_NAMES = {"node_modules", "__pycache__", ".git", "dist", "build", ".cache"}
+# Dict inverso ext→categoría para lookup O(1)
+_EXT_TO_CAT: dict[str, str] = {}
+for _cat, _exts in CATEGORIAS_EXT.items():
+    for _e in _exts:
+        _EXT_TO_CAT[_e] = _cat
+
+CACHE_FOLDER_NAMES: frozenset = frozenset({
+    "node_modules", "__pycache__", ".git", "dist", "build", ".cache",
+    ".next", ".nuxt", "venv", ".venv", "env",
+})
+
+DUP_MIN_SIZE = 1024 * 1024       # 1 MB — mínimo para candidato a duplicado
+BATCH_SIZE   = 500                # archivos por lote antes de poner en queue
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _ext_categoria(nombre: str) -> str:
-    ext = os.path.splitext(nombre)[1].lower()
-    for cat, exts in CATEGORIAS_EXT.items():
-        if ext in exts:
-            return cat
-    return "Otros"
-
-
-def _is_cache_folder(name: str) -> bool:
-    return name.lower() in CACHE_FOLDER_NAMES
+def _ext_categoria(ext_lower: str) -> str:
+    """Categoría a partir de la extensión (ya en minúsculas). O(1)."""
+    return _EXT_TO_CAT.get(ext_lower, "Otros")
 
 
 # ── Scanner principal ─────────────────────────────────────────────────────────
@@ -74,54 +89,64 @@ class DiskScanner:
 
     Tipos de mensaje:
       {"type": "start",    "root": str, "n_top": int}
+      {"type": "file_batch", "entries": list[dict]}       ← NUEVO: lote de archivos
       {"type": "folder",   "path": str, "parent": str, "size": int, "file_count": int}
-      {"type": "file",     "path": str, "name": str, "size": int, "category": str,
-                           "extension": str, "is_cache": bool, "parent_dir": str}
       {"type": "progress", "done": int, "total": int, "current": str, "bytes": int}
-      {"type": "done",     "total_bytes": int, "elapsed": float,
-                           "duplicates": dict}
+      {"type": "done",     "total_bytes": int, "elapsed": float, "duplicates": dict}
       {"type": "error",    "path": str, "msg": str}
     """
 
     def __init__(self, msg_queue: queue.Queue, cancel_event: threading.Event,
-                 max_workers: int = 16):
+                 max_workers: int = 0):
         self._q = msg_queue
         self._cancel = cancel_event
-        self._max_workers = max_workers
+        # 0 → auto: usa CPU count * 2, mínimo 8, máximo 32
+        cpu = os.cpu_count() or 4
+        self._max_workers = max_workers or min(max(cpu * 2, 8), 32)
         self._lock = threading.Lock()
         self._bytes_total = 0
         self._done_count = 0
-        self._duplicates: dict = defaultdict(list)  # (name_lower, size) -> [paths]
+        self._total_top = 0   # total de carpetas top-level (para % progreso)
+        # Cada hilo acumula duplicados localmente; se fusionan al final con un solo lock
+        self._local_dups: list[dict] = []
 
     # ── público ────────────────────────────────────────────────────────────────
 
     def scan(self, root_path: str):
         import time
-        t0 = time.time()
+        t0 = time.perf_counter()
 
-        # Obtener carpetas de primer nivel
         top_folders = self._top_folders(root_path)
         total_top = len(top_folders)
+        self._total_top = total_top
 
         self._q.put({"type": "start", "root": root_path, "n_top": total_top})
 
         with ThreadPoolExecutor(max_workers=self._max_workers) as ex:
-            futures = {ex.submit(self._scan_folder, folder, root_path): folder
-                       for folder in top_folders}
+            futures = {
+                ex.submit(self._scan_folder, folder, root_path): folder
+                for folder in top_folders
+            }
             for fut in as_completed(futures):
                 if self._cancel.is_set():
                     break
                 try:
                     fut.result()
-                except Exception as e:
-                    self._q.put({"type": "error", "path": futures[fut], "msg": str(e)})
+                except Exception as exc:
+                    self._q.put({"type": "error",
+                                 "path": futures[fut], "msg": str(exc)})
 
-        elapsed = time.time() - t0
+        elapsed = time.perf_counter() - t0
 
-        # Filtrar duplicados reales (>1 copia)
+        # Fusionar duplicados locales de todos los hilos
+        merged: dict = defaultdict(list)
+        for local in self._local_dups:
+            for key, paths in local.items():
+                merged[key].extend(paths)
+
         real_dups = {
             k: list(dict.fromkeys(v))
-            for k, v in self._duplicates.items()
+            for k, v in merged.items()
             if len(set(v)) > 1
         }
 
@@ -134,98 +159,118 @@ class DiskScanner:
 
     # ── privado ────────────────────────────────────────────────────────────────
 
-    def _top_folders(self, root_path: str) -> list:
-        """Devuelve la lista de subcarpetas directas de root_path a escanear."""
-        result = []
+    def _top_folders(self, root_path: str) -> list[str]:
+        result: list[str] = []
         try:
-            for e in os.scandir(root_path):
-                try:
-                    name = e.name
-                    if name in IGNORAR_CARPETAS or name.startswith("$"):
-                        continue
-                    if e.is_dir(follow_symlinks=False):
-                        result.append(e.path)
-                except (PermissionError, OSError):
-                    pass
+            with os.scandir(root_path) as it:
+                for e in it:
+                    try:
+                        if e.name in IGNORAR_CARPETAS or e.name.startswith("$"):
+                            continue
+                        if e.is_dir(follow_symlinks=False):
+                            result.append(e.path)
+                    except (PermissionError, OSError):
+                        pass
         except (PermissionError, OSError) as exc:
             self._q.put({"type": "error", "path": root_path, "msg": str(exc)})
         return result
 
     def _scan_folder(self, folder_path: str, root_path: str):
-        """Recorre folder_path recursivamente y emite mensajes para cada archivo/carpeta."""
+        """
+        Recorre folder_path recursivamente con os.scandir (evita stat extra).
+        Emite mensajes de carpeta y lotes de archivos.
+        """
         if self._cancel.is_set():
             return
 
+        local_dups: dict = defaultdict(list)
         folder_size = 0
         folder_files = 0
-        # sub-carpetas encontradas en este nivel para emitir sus propios mensajes
-        sub_totals: dict = {}  # path -> size
 
-        try:
-            for dirpath, dirnames, filenames in os.walk(folder_path, followlinks=False):
-                if self._cancel.is_set():
-                    return
+        # Pila de (dirpath, parent_path) para DFS iterativo sin recursión Python
+        stack: list[tuple[str, str]] = [(folder_path, os.path.dirname(folder_path))]
 
-                # Filtrar carpetas sistema
-                dirnames[:] = [
-                    d for d in dirnames
-                    if d not in IGNORAR_CARPETAS and not d.startswith("$")
-                ]
+        while stack:
+            if self._cancel.is_set():
+                return
 
-                dir_size = 0
-                for fname in filenames:
-                    if self._cancel.is_set():
-                        return
-                    try:
-                        fp = os.path.join(dirpath, fname)
-                        st = os.stat(fp, follow_symlinks=False)
-                        s = st.st_size
-                        cat = _ext_categoria(fname)
-                        ext = os.path.splitext(fname)[1].lower()
-                        is_cache = _is_cache_folder(os.path.basename(dirpath))
+            dirpath, parent_path = stack.pop()
+            dir_size = 0
+            dir_file_count = 0
+            batch: list[dict] = []
 
-                        self._q.put({
-                            "type": "file",
-                            "path": fp,
-                            "name": fname,
-                            "size": s,
-                            "category": cat,
-                            "extension": ext,
-                            "is_cache": is_cache,
-                            "parent_dir": dirpath,
-                        })
+            try:
+                with os.scandir(dirpath) as it:
+                    for entry in it:
+                        if self._cancel.is_set():
+                            return
+                        try:
+                            if entry.is_dir(follow_symlinks=False):
+                                name = entry.name
+                                if name in IGNORAR_CARPETAS or name.startswith("$"):
+                                    continue
+                                stack.append((entry.path, dirpath))
+                            else:
+                                # Usar stat en caché del DirEntry (ya disponible en NTFS)
+                                st = entry.stat(follow_symlinks=False)
+                                s = st.st_size
+                                name = entry.name
 
-                        dir_size += s
-                        folder_size += s
-                        folder_files += 1
+                                # Extensión sin llamar splitext
+                                dot = name.rfind(".")
+                                ext = name[dot:].lower() if dot > 0 else ""
 
-                        # Candidato duplicado (mismo nombre+tamaño, >1MB)
-                        if s > 1024 * 1024:
-                            key = (fname.lower(), s)
-                            with self._lock:
-                                self._duplicates[key].append(fp)
+                                cat = _ext_categoria(ext)
+                                is_cache = dirpath.split(os.sep)[-1].lower() in CACHE_FOLDER_NAMES
 
-                    except (PermissionError, OSError):
-                        pass
+                                batch.append({
+                                    "path": entry.path,
+                                    "name": name,
+                                    "size": s,
+                                    "category": cat,
+                                    "extension": ext,
+                                    "is_cache": is_cache,
+                                    "parent_dir": dirpath,
+                                })
 
-                # Emitir mensaje de subcarpeta (no la raíz del scan)
-                if dirpath != folder_path:
-                    parent = os.path.dirname(dirpath)
-                    self._q.put({
-                        "type": "folder",
-                        "path": dirpath,
-                        "parent": parent,
-                        "size": dir_size,
-                        "file_count": len(filenames),
-                    })
+                                dir_size    += s
+                                folder_size += s
+                                dir_file_count += 1
+                                folder_files   += 1
 
-        except (PermissionError, OSError):
-            pass
+                                if s > DUP_MIN_SIZE:
+                                    local_dups[(name.lower(), s)].append(entry.path)
 
-        # Emitir la carpeta top-level con su total
+                                # Emitir lote cuando llega al límite
+                                if len(batch) >= BATCH_SIZE:
+                                    self._q.put({"type": "file_batch", "entries": batch})
+                                    batch = []
+
+                        except (PermissionError, OSError):
+                            pass
+
+            except (PermissionError, OSError):
+                pass
+
+            # Vaciar lote restante
+            if batch:
+                self._q.put({"type": "file_batch", "entries": batch})
+
+            # Emitir carpeta (no la top-level aún)
+            if dirpath != folder_path:
+                self._q.put({
+                    "type": "folder",
+                    "path": dirpath,
+                    "parent": parent_path,
+                    "size": dir_size,
+                    "file_count": dir_file_count,
+                })
+
+        # Guardar duplicados locales
         with self._lock:
+            self._local_dups.append(dict(local_dups))
             self._bytes_total += folder_size
-            self._done_count += 1
+            self._done_count  += 1
             done = self._done_count
 
         parent = os.path.dirname(folder_path)
@@ -239,7 +284,7 @@ class DiskScanner:
         self._q.put({
             "type": "progress",
             "done": done,
-            "total": 0,  # total se actualiza en app.py una vez conocido
+            "total": self._total_top,
             "current": folder_path,
             "bytes": self._bytes_total,
         })
