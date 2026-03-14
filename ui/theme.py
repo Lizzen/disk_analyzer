@@ -1,6 +1,6 @@
 """
 Sistema de tema centralizado para Disk Analyzer.
-Define paleta de colores, fuentes y estilos ttk en un solo lugar.
+Paleta Linear/Vercel/Raycast — zinc-950 base, blue-500 accent.
 """
 
 import tkinter as tk
@@ -8,54 +8,53 @@ from tkinter import ttk
 
 # ── Paleta de colores ──────────────────────────────────────────────────────────
 
-BG_DARK      = "#1a1a2e"   # Fondo principal (azul-negro profundo)
-BG_PANEL     = "#16213e"   # Paneles laterales
-BG_SURFACE   = "#0f3460"   # Superficies elevadas (toolbar, statusbar)
-BG_CARD      = "#1e2a45"   # Tarjetas / filas alternadas
-BG_INPUT     = "#0d1b38"   # Campos de entrada
-BG_HOVER     = "#233554"   # Hover sobre elementos
+BG_DARK      = "#09090b"   # zinc-950 — fondo raíz
+BG_PANEL     = "#111113"   # zinc-900 ish — paneles
+BG_SURFACE   = "#18181b"   # zinc-900 — toolbar / statusbar
+BG_CARD      = "#1c1c1f"   # ligeramente más claro — tarjetas
+BG_INPUT     = "#0f0f11"   # más oscuro — campos de entrada
+BG_HOVER     = "#27272a"   # zinc-800 — hover
 
-ACCENT       = "#e94560"   # Rojo-rosa: acento principal
-ACCENT_DARK  = "#c73652"   # Acento oscuro (pressed)
-ACCENT_GREEN = "#4ecdc4"   # Verde-turquesa: OK / bajo uso
-ACCENT_AMBER = "#f7b731"   # Amarillo: advertencia media
-ACCENT_RED   = "#e94560"   # Rojo: crítico / uso alto
+ACCENT       = "#3b82f6"   # blue-500 — acento principal
+ACCENT_DARK  = "#2563eb"   # blue-600 — acento presionado
+ACCENT_GREEN = "#10b981"   # emerald-500 — OK / éxito
+ACCENT_AMBER = "#f59e0b"   # amber-500 — advertencia
+ACCENT_RED   = "#ef4444"   # red-500 — error / peligro
 
-TEXT_PRIMARY   = "#e8eaf6"  # Texto principal
-TEXT_SECONDARY = "#9fa8da"  # Texto secundario
-TEXT_MUTED     = "#5c6bc0"  # Texto apagado
+TEXT_PRIMARY   = "#fafafa"  # zinc-50 — texto principal
+TEXT_SECONDARY = "#a1a1aa"  # zinc-400 — texto secundario
+TEXT_MUTED     = "#52525b"  # zinc-600 — texto apagado
 
-BORDER = "#1e3a5f"          # Bordes sutiles
-SASH   = "#0f3460"          # Separador PanedWindow
+BORDER = "#27272a"          # zinc-800 — bordes sutiles
+SASH   = "#18181b"          # separador PanedWindow
 
 # Tags de color para FileTable
-TAG_HUGE_BG   = "#4a0e0e"
-TAG_LARGE_BG  = "#4a2e0a"
-TAG_MEDIUM_BG = "#3a3a0a"
-TAG_CACHE_BG  = "#1e2233"
-TAG_CACHE_FG  = "#7986cb"
-TAG_ODD_BG    = "#141d30"
-TAG_EVEN_BG   = BG_CARD
+TAG_HUGE_BG   = "#1c0a0a"
+TAG_LARGE_BG  = "#1c1400"
+TAG_MEDIUM_BG = "#0a1020"
+TAG_CACHE_BG  = "#0f0f11"
+TAG_CACHE_FG  = "#6366f1"  # indigo
+TAG_ODD_BG    = "#0c0c0e"
+TAG_EVEN_BG   = "#111113"
 
 # DiskBar
-DISK_TRACK = "#1e3a5f"
-DISK_GREEN = "#4ecdc4"
-DISK_AMBER = "#f7b731"
-DISK_RED   = "#e94560"
+DISK_TRACK = "#27272a"
+DISK_GREEN = "#10b981"
+DISK_AMBER = "#f59e0b"
+DISK_RED   = "#ef4444"
 
-# ── Fuentes ── (tamaño 10 como base: legible en 1536×864 con scaling 1.33)
+# ── Fuentes ────────────────────────────────────────────────────────────────────
+FONT_UI      = ("Segoe UI Variable", 10)
+FONT_UI_BOLD = ("Segoe UI Variable", 10, "bold")
+FONT_SMALL   = ("Segoe UI Variable", 9)
+FONT_TITLE   = ("Segoe UI Variable", 12, "bold")
+FONT_MONO    = ("Cascadia Code", 9)
 
-FONT_UI      = ("Segoe UI", 10)
-FONT_UI_BOLD = ("Segoe UI", 10, "bold")
-FONT_SMALL   = ("Segoe UI", 9)
-FONT_TITLE   = ("Segoe UI", 11, "bold")
-FONT_MONO    = ("Consolas", 9)
-
-# Altura de fila en Treeview (px) — más grande para resoluciones medias
-ROW_HEIGHT = 26
+# Altura de fila en Treeview
+ROW_HEIGHT = 28
 
 
-# ── Aplicador de tema ─────────────────────────────────────────────────────────
+# ── Aplicador de tema ──────────────────────────────────────────────────────────
 
 def apply(root: tk.Tk) -> ttk.Style:
     """Aplica el tema completo a la ventana raíz y devuelve el Style."""
@@ -66,12 +65,13 @@ def apply(root: tk.Tk) -> ttk.Style:
     except tk.TclError:
         pass
 
-    # Frame
+    # ── Frame
     style.configure("TFrame",         background=BG_DARK)
     style.configure("Surface.TFrame", background=BG_SURFACE)
     style.configure("Panel.TFrame",   background=BG_PANEL)
+    style.configure("Card.TFrame",    background=BG_CARD)
 
-    # Label
+    # ── Label
     style.configure("TLabel",
                     background=BG_DARK, foreground=TEXT_PRIMARY, font=FONT_UI)
     style.configure("Muted.TLabel",
@@ -85,20 +85,20 @@ def apply(root: tk.Tk) -> ttk.Style:
     style.configure("Stats.TLabel",
                     background=BG_SURFACE, foreground=TEXT_SECONDARY, font=FONT_SMALL)
 
-    # Entry — padding vertical mayor para que se vea más alto
+    # ── Entry
     style.configure("TEntry",
                     fieldbackground=BG_INPUT,
                     foreground=TEXT_PRIMARY,
-                    insertcolor=TEXT_PRIMARY,
+                    insertcolor=ACCENT,
                     selectbackground=ACCENT,
                     selectforeground="white",
                     bordercolor=BORDER,
                     lightcolor=BORDER,
                     darkcolor=BORDER,
                     relief="flat",
-                    padding=(6, 5))
+                    padding=(8, 6))
 
-    # Combobox
+    # ── Combobox
     style.configure("TCombobox",
                     fieldbackground=BG_INPUT,
                     background=BG_INPUT,
@@ -110,7 +110,7 @@ def apply(root: tk.Tk) -> ttk.Style:
                     lightcolor=BORDER,
                     darkcolor=BORDER,
                     relief="flat",
-                    padding=(6, 5))
+                    padding=(8, 5))
     style.map("TCombobox",
               fieldbackground=[("readonly", BG_INPUT), ("disabled", BG_DARK)],
               foreground=[("disabled", TEXT_MUTED)])
@@ -119,72 +119,72 @@ def apply(root: tk.Tk) -> ttk.Style:
     root.option_add("*TCombobox*Listbox.foreground",       TEXT_PRIMARY)
     root.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
     root.option_add("*TCombobox*Listbox.selectForeground", "white")
-    root.option_add("*TCombobox*Listbox.font",             "\"Segoe UI\" 10")
+    root.option_add("*TCombobox*Listbox.font",             "\"Segoe UI Variable\" 10")
 
-    # Button normal
+    # ── Button normal (flat, card bg)
     style.configure("TButton",
-                    background=BG_HOVER,
-                    foreground=TEXT_PRIMARY,
+                    background=BG_CARD,
+                    foreground=TEXT_SECONDARY,
                     font=FONT_UI,
                     relief="flat",
                     borderwidth=0,
-                    padding=(12, 6),
+                    padding=(12, 7),
                     focuscolor=ACCENT)
     style.map("TButton",
-              background=[("active", BORDER), ("disabled", BG_DARK)],
-              foreground=[("disabled", TEXT_MUTED)],
+              background=[("active", BG_HOVER), ("disabled", BG_DARK)],
+              foreground=[("active", TEXT_PRIMARY), ("disabled", TEXT_MUTED)],
               relief=[("pressed", "flat")])
 
-    # Button acento (Escanear)
+    # ── Button accent (blue)
     style.configure("Accent.TButton",
                     background=ACCENT,
                     foreground="white",
                     font=FONT_UI_BOLD,
                     relief="flat",
                     borderwidth=0,
-                    padding=(14, 6))
+                    padding=(16, 7))
     style.map("Accent.TButton",
-              background=[("active", ACCENT_DARK), ("disabled", "#3d2030")],
-              foreground=[("disabled", "#aaaaaa")])
+              background=[("active", ACCENT_DARK), ("disabled", "#1e3a5f")],
+              foreground=[("disabled", "#4a7ab5")])
 
-    # Button peligro (eliminar permanente)
+    # ── Button danger (ghost red text)
     style.configure("Danger.TButton",
-                    background="#7b1a1a",
-                    foreground="white",
+                    background=BG_CARD,
+                    foreground=ACCENT_RED,
                     font=FONT_UI_BOLD,
                     relief="flat",
                     borderwidth=0,
-                    padding=(12, 6))
+                    padding=(12, 7))
     style.map("Danger.TButton",
-              background=[("active", "#9c2020"), ("disabled", "#3d1a1a")],
-              foreground=[("disabled", "#aaaaaa")])
+              background=[("active", "#2a0f0f"), ("disabled", BG_DARK)],
+              foreground=[("disabled", "#7a2a2a")])
 
-    # Scrollbar — más estrecha y sutil
+    # ── Scrollbar (very thin, 6px)
     style.configure("TScrollbar",
                     background=BG_PANEL,
                     troughcolor=BG_DARK,
                     bordercolor=BG_DARK,
-                    arrowcolor=TEXT_MUTED,
+                    arrowcolor=BG_PANEL,   # hide arrows
                     relief="flat",
                     borderwidth=0,
-                    arrowsize=10,
-                    width=10)
+                    arrowsize=0,
+                    width=6)
     style.map("TScrollbar",
               background=[("active", BORDER)])
 
-    # Separator
+    # ── Separator
     style.configure("TSeparator", background=BORDER)
 
-    # Progressbar — más gruesa para que sea visible
+    # ── Progressbar (thin, 2px height)
     style.configure("TProgressbar",
                     background=ACCENT,
-                    troughcolor=BG_INPUT,
-                    bordercolor=BG_INPUT,
+                    troughcolor=BG_DARK,
+                    bordercolor=BG_DARK,
                     lightcolor=ACCENT,
                     darkcolor=ACCENT,
-                    thickness=5)
+                    thickness=2)
 
-    # Treeview — rowheight mayor para mejor legibilidad
+    # ── Treeview
     style.configure("Treeview",
                     background=BG_PANEL,
                     fieldbackground=BG_PANEL,
@@ -195,19 +195,18 @@ def apply(root: tk.Tk) -> ttk.Style:
                     relief="flat")
     style.configure("Treeview.Heading",
                     background=BG_SURFACE,
-                    foreground=TEXT_SECONDARY,
-                    font=FONT_UI_BOLD,
+                    foreground=TEXT_MUTED,
+                    font=("Segoe UI Variable", 9, "bold"),
                     relief="flat",
                     borderwidth=0,
-                    padding=(6, 6))
+                    padding=(8, 6))
     style.map("Treeview",
               background=[("selected", ACCENT)],
               foreground=[("selected", "white")])
     style.map("Treeview.Heading",
-              background=[("active", BG_HOVER)],
+              background=[("active", BG_CARD)],
+              foreground=[("active", TEXT_SECONDARY)],
               relief=[("active", "flat")])
 
-    # Fondo de la ventana raíz
     root.configure(bg=BG_DARK)
-
     return style

@@ -73,18 +73,18 @@ class GeminiProvider(AIProvider):
 
         try:
             if on_chunk:
-                with client.models.generate_content_stream(
+                stream = client.models.generate_content_stream(
                     model=_MODEL,
                     contents=history + [types.Content(role="user", parts=[types.Part(text=last)])],
                     config=types.GenerateContentConfig(**config_kwargs) if config_kwargs else None,
-                ) as stream:
-                    full = []
-                    for chunk in stream:
-                        text = chunk.text or ""
-                        if text:
-                            full.append(text)
-                            on_chunk(text)
-                    return "".join(full)
+                )
+                full = []
+                for chunk in stream:
+                    text = chunk.text or ""
+                    if text:
+                        full.append(text)
+                        on_chunk(text)
+                return "".join(full)
             else:
                 response = client.models.generate_content(
                     model=_MODEL,

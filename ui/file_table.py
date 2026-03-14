@@ -80,8 +80,8 @@ class FileTable(ttk.Frame):
             self._tree.column(col_id, width=width, anchor=anchor,
                               stretch=(col_id == "path"))
 
-        self._tree.tag_configure("huge",   background=theme.TAG_HUGE_BG,   foreground=theme.TEXT_PRIMARY)
-        self._tree.tag_configure("large",  background=theme.TAG_LARGE_BG,  foreground=theme.TEXT_PRIMARY)
+        self._tree.tag_configure("huge",   background=theme.TAG_HUGE_BG,   foreground=theme.ACCENT_RED)
+        self._tree.tag_configure("large",  background=theme.TAG_LARGE_BG,  foreground=theme.ACCENT_AMBER)
         self._tree.tag_configure("medium", background=theme.TAG_MEDIUM_BG, foreground=theme.TEXT_PRIMARY)
         self._tree.tag_configure("cache",  background=theme.TAG_CACHE_BG,  foreground=theme.TAG_CACHE_FG)
         self._tree.tag_configure("odd",    background=theme.TAG_ODD_BG,    foreground=theme.TEXT_PRIMARY)
@@ -110,7 +110,7 @@ class FileTable(ttk.Frame):
             self, tearoff=False,
             bg=theme.BG_SURFACE, fg=theme.TEXT_PRIMARY,
             activebackground=theme.ACCENT, activeforeground="white",
-            relief="flat", borderwidth=1,
+            relief="flat", borderwidth=0,
         )
         self._ctx.add_command(label="  Abrir en Explorador",     command=self._ctx_open)
         self._ctx.add_separator()

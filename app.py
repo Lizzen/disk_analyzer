@@ -9,8 +9,9 @@ import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-from core.scanner import DiskScanner
+from core.scanner import DiskScanner, verify_duplicates_by_hash
 from core.models import FileEntry, FolderNode, ScanResult
+from utils import logger as log
 from core.trash import send_to_recycle_bin, delete_permanently, open_in_explorer
 from utils.formatters import format_size
 
@@ -42,6 +43,7 @@ class App(ttk.Frame):
         self._scan_result: ScanResult | None = None
         self._n_top: int = 0          # carpetas de primer nivel (para progreso)
         self._scanning = False
+        self._scan_errors: int = 0    # carpetas con error de acceso en el último escaneo
 
         self._build()
         self._apply_theme()
@@ -64,13 +66,10 @@ class App(ttk.Frame):
         self._disk_bar = DiskBar(self)
         self._disk_bar.pack(fill="x")
 
-        # ── Separador ──
-        ttk.Separator(self).pack(fill="x")
-
         # ── Contenido principal (PanedWindow) ──
         self._paned = tk.PanedWindow(self, orient="horizontal",
-                                      sashrelief="flat", sashwidth=4,
-                                      bg=theme.SASH)
+                                      sashrelief="flat", sashwidth=2,
+                                      bg=theme.BORDER)
         self._paned.pack(fill="both", expand=True)
 
         # Panel izquierdo: árbol de carpetas
@@ -82,13 +81,14 @@ class App(ttk.Frame):
         self._paned.add(self._tree_panel, minsize=160, width=240)
 
         # Panel central: filtros + tabla
-        right = ttk.Frame(self._paned)
+        right = ttk.Frame(self._paned, style="Panel.TFrame")
         self._paned.add(right, minsize=380)
 
         self._filter_bar = FilterBar(right, on_change=self._on_filter_change)
-        self._filter_bar.pack(fill="x", pady=2)
+        self._filter_bar.pack(fill="x")
 
-        ttk.Separator(right).pack(fill="x")
+        # Separador fino entre filtros y tabla
+        tk.Frame(right, bg=theme.BORDER, height=1).pack(fill="x")
 
         self._file_table = FileTable(
             right,
@@ -105,7 +105,6 @@ class App(ttk.Frame):
         self._paned.add(self._chat_panel, minsize=260, width=300)
 
         # ── StatusBar ──
-        ttk.Separator(self).pack(fill="x")
         self._status = StatusBar(self)
         self._status.pack(fill="x")
 
@@ -113,10 +112,16 @@ class App(ttk.Frame):
         self._build_menu()
 
     def _build_menu(self):
-        menubar = tk.Menu(self._root)
+        menubar = tk.Menu(self._root,
+                          bg=theme.BG_SURFACE, fg=theme.TEXT_PRIMARY,
+                          activebackground=theme.ACCENT, activeforeground="white",
+                          relief="flat", borderwidth=0)
         self._root.config(menu=menubar)
 
-        file_menu = tk.Menu(menubar, tearoff=False)
+        file_menu = tk.Menu(menubar, tearoff=False,
+                            bg=theme.BG_SURFACE, fg=theme.TEXT_PRIMARY,
+                            activebackground=theme.ACCENT, activeforeground="white",
+                            relief="flat", borderwidth=0)
         menubar.add_cascade(label="Archivo", menu=file_menu)
         file_menu.add_command(label="Escanear...",        accelerator="F5",
                               command=lambda: self._toolbar._btn_scan.invoke())
@@ -127,12 +132,18 @@ class App(ttk.Frame):
         file_menu.add_separator()
         file_menu.add_command(label="Salir",              command=self._root.destroy)
 
-        view_menu = tk.Menu(menubar, tearoff=False)
+        view_menu = tk.Menu(menubar, tearoff=False,
+                            bg=theme.BG_SURFACE, fg=theme.TEXT_PRIMARY,
+                            activebackground=theme.ACCENT, activeforeground="white",
+                            relief="flat", borderwidth=0)
         menubar.add_cascade(label="Ver", menu=view_menu)
         view_menu.add_command(label="Mostrar duplicados", command=self._show_duplicates)
         view_menu.add_command(label="Limpiar filtros",    command=self._filter_bar.reset)
 
-        chat_menu = tk.Menu(menubar, tearoff=False)
+        chat_menu = tk.Menu(menubar, tearoff=False,
+                            bg=theme.BG_SURFACE, fg=theme.TEXT_PRIMARY,
+                            activebackground=theme.ACCENT, activeforeground="white",
+                            relief="flat", borderwidth=0)
         menubar.add_cascade(label="Chat IA", menu=chat_menu)
         chat_menu.add_command(label="Configurar APIs…",
                               command=self._open_api_settings)
@@ -154,6 +165,7 @@ class App(ttk.Frame):
         if self._scanning:
             return
 
+        log.info("APP _start_scan  path=%s", path)
         self._scanning = True
         self._cancel_evt.clear()
         self._scan_result = ScanResult(root_path=path)
@@ -179,7 +191,7 @@ class App(ttk.Frame):
 
     def _cancel_scan(self):
         self._cancel_evt.set()
-        self._root.title("Disk Analyzer")
+        self._root.title("Disk Analyzer  —  DKA")
         self._status.set_message("Escaneo cancelado.")
         self._toolbar.set_scanning(False)
         self._scanning = False
@@ -188,9 +200,13 @@ class App(ttk.Frame):
 
     def _poll_queue(self):
         try:
+            count = 0
             for _ in range(POLL_MAX_MSGS):
                 msg = self._msg_queue.get_nowait()
                 self._dispatch(msg)
+                count += 1
+            if count == POLL_MAX_MSGS:
+                log.warning("POLL hit POLL_MAX_MSGS=%d — queue may be saturated", POLL_MAX_MSGS)
         except queue.Empty:
             pass
 
@@ -278,10 +294,14 @@ class App(ttk.Frame):
             pass
 
     def _on_scan_done(self, msg: dict):
+        log.info("APP _on_scan_done  bytes=%d  elapsed=%.2fs  errors=%d  dups=%d",
+                 msg["total_bytes"], msg["elapsed"],
+                 msg.get("errors", 0), len(msg.get("duplicates", {})))
         self._scanning = False
         self._scan_result.total_bytes = msg["total_bytes"]
         self._scan_result.elapsed     = msg["elapsed"]
         self._scan_result.duplicates  = msg["duplicates"]
+        self._scan_errors             = msg.get("errors", 0)
 
         # Volcar upserts pendientes del árbol antes de recalcular porcentajes
         self._tree_panel.flush_upserts()
@@ -298,14 +318,41 @@ class App(ttk.Frame):
         self._file_table.flush_batch()
 
         self._toolbar.set_scanning(False)
-        self._root.title("Disk Analyzer")
+        self._root.title("Disk Analyzer  —  DKA")
         self._chat_panel.notify_scan_complete(self._scan_result)
         self._status.update_stats(
             folders=len(self._scan_result.folders),
             files=len(self._scan_result.files),
             bytes_total=msg["total_bytes"],
             elapsed=msg["elapsed"],
+            errors=self._scan_errors,
         )
+
+        log.info("APP scan_done UI update complete  folders=%d  files=%d",
+                 len(self._scan_result.folders), len(self._scan_result.files))
+
+        # Verificar duplicados reales por hash MD5 en segundo plano
+        if self._scan_result.duplicates:
+            candidates = dict(self._scan_result.duplicates)
+            log.info("APP launching MD5 verification for %d candidates", len(candidates))
+            threading.Thread(
+                target=self._verify_duplicates_hash,
+                args=(candidates,),
+                daemon=True,
+            ).start()
+
+    def _verify_duplicates_hash(self, candidates: dict):
+        """Corre en background: confirma duplicados por MD5 y actualiza scan_result."""
+        log.info("MD5 verify START  candidates=%d", len(candidates))
+        real = verify_duplicates_by_hash(candidates, self._cancel_evt)
+        log.info("MD5 verify DONE  real_dups=%d", len(real))
+        if self._scan_result:
+            self._scan_result.duplicates = real
+            n = len(real)
+            self._root.after(0, lambda: self._status.set_message(
+                f"✓ Duplicados verificados por contenido: {n} grupo(s) real(es)"
+                if n else "✓ Sin duplicados reales por contenido"
+            ))
 
     def _get_selected_path(self) -> str:
         """Retorna la ruta del archivo/carpeta actualmente seleccionado en la UI."""
@@ -318,7 +365,8 @@ class App(ttk.Frame):
     # ── Filtros ───────────────────────────────────────────────────────────────
 
     def _on_filter_change(self, category: str, min_bytes: int, name_pattern: str):
-        self._file_table.apply_filters(category, min_bytes, name_pattern)
+        if hasattr(self, "_file_table"):
+            self._file_table.apply_filters(category, min_bytes, name_pattern)
 
     def _on_folder_selected(self, path: str):
         self._file_table.filter_by_folder(path)

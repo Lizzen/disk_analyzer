@@ -12,11 +12,15 @@ Optimizaciones v2:
   - Lookup de categoría con dict inverso (ext→cat) O(1) en lugar de iterar
 """
 
+import hashlib
 import os
 import queue
 import threading
+import time as _time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from utils import logger as log
 
 # ── Configuración ─────────────────────────────────────────────────────────────
 
@@ -127,18 +131,20 @@ class DiskScanner:
         self._bytes_total = 0
         self._done_count = 0
         self._total_top = 0   # total de carpetas top-level (para % progreso)
+        self._error_count = 0  # carpetas/archivos con error de acceso
         # Cada hilo acumula duplicados localmente; se fusionan al final con un solo lock
         self._local_dups: list[dict] = []
 
     # ── público ────────────────────────────────────────────────────────────────
 
     def scan(self, root_path: str):
-        import time
-        t0 = time.perf_counter()
+        t0 = _time.perf_counter()
+        log.info("SCAN START  root=%s  workers=%d", root_path, self._max_workers)
 
         top_folders = self._top_folders(root_path)
         total_top = len(top_folders)
         self._total_top = total_top
+        log.info("SCAN top-level folders=%d", total_top)
 
         self._q.put({"type": "start", "root": root_path, "n_top": total_top})
 
@@ -149,14 +155,18 @@ class DiskScanner:
             }
             for fut in as_completed(futures):
                 if self._cancel.is_set():
+                    log.info("SCAN cancelled — stopping after_completed loop")
                     break
                 try:
                     fut.result()
                 except Exception as exc:
+                    log.error("SCAN future error  path=%s  exc=%s", futures[fut], exc)
                     self._q.put({"type": "error",
                                  "path": futures[fut], "msg": str(exc)})
 
-        elapsed = time.perf_counter() - t0
+        elapsed = _time.perf_counter() - t0
+        log.info("SCAN DONE  elapsed=%.2fs  bytes=%d  errors=%d  dups_candidates=%d",
+                 elapsed, self._bytes_total, self._error_count, len(self._local_dups))
 
         # Fusionar duplicados locales de todos los hilos
         merged: dict = defaultdict(list)
@@ -169,12 +179,14 @@ class DiskScanner:
             for k, v in merged.items()
             if len(set(v)) > 1
         }
+        log.info("SCAN dup groups after dedup=%d", len(real_dups))
 
         self._q.put({
             "type": "done",
             "total_bytes": self._bytes_total,
             "elapsed": elapsed,
             "duplicates": real_dups,
+            "errors": self._error_count,
         })
 
     # ── privado ────────────────────────────────────────────────────────────────
@@ -186,12 +198,14 @@ class DiskScanner:
                 for e in it:
                     try:
                         if _should_ignore(e.name):
+                            log.debug("IGNORE  folder=%s", e.path)
                             continue
                         if e.is_dir(follow_symlinks=False):
                             result.append(e.path)
-                    except (PermissionError, OSError):
-                        pass
+                    except (PermissionError, OSError) as exc:
+                        log.warning("TOP_FOLDERS access error  path=%s  exc=%s", e.path, exc)
         except (PermissionError, OSError) as exc:
+            log.error("TOP_FOLDERS root not accessible  path=%s  exc=%s", root_path, exc)
             self._q.put({"type": "error", "path": root_path, "msg": str(exc)})
         return result
 
@@ -201,21 +215,29 @@ class DiskScanner:
         Emite mensajes de carpeta y lotes de archivos.
         """
         if self._cancel.is_set():
+            log.debug("FOLDER skipped (cancelled before start)  path=%s", folder_path)
             return
+
+        t_folder = _time.perf_counter()
+        log.debug("FOLDER START  path=%s", folder_path)
 
         local_dups: dict = defaultdict(list)
         folder_size = 0
         folder_files = 0
         files_since_progress = 0   # contador para emitir progreso intermedio
 
-        # Pila de (dirpath, parent_path) para DFS iterativo sin recursión Python
-        stack: list[tuple[str, str]] = [(folder_path, os.path.dirname(folder_path))]
+        # Pila de (dirpath, parent_path, is_cache) para DFS iterativo sin recursión Python
+        # is_cache se propaga hacia abajo: si un ancestro es carpeta cache, todo lo de dentro también
+        root_is_cache = folder_path.split(os.sep)[-1].lower() in CACHE_FOLDER_NAMES
+        stack: list[tuple[str, str, bool]] = [(folder_path, os.path.dirname(folder_path), root_is_cache)]
 
         while stack:
             if self._cancel.is_set():
+                log.debug("FOLDER cancelled mid-DFS  path=%s  files_so_far=%d", folder_path, folder_files)
                 return
 
-            dirpath, parent_path = stack.pop()
+            dirpath, parent_path, dir_is_cache = stack.pop()
+            log.debug("DIR  path=%s", dirpath)
             dir_size = 0
             dir_file_count = 0
             batch: list[dict] = []
@@ -229,7 +251,8 @@ class DiskScanner:
                             if entry.is_dir(follow_symlinks=False):
                                 if _should_ignore(entry.name):
                                     continue
-                                stack.append((entry.path, dirpath))
+                                child_is_cache = dir_is_cache or entry.name.lower() in CACHE_FOLDER_NAMES
+                                stack.append((entry.path, dirpath, child_is_cache))
                             else:
                                 # Usar stat en caché del DirEntry (ya disponible en NTFS)
                                 st = entry.stat(follow_symlinks=False)
@@ -241,7 +264,7 @@ class DiskScanner:
                                 ext = name[dot:].lower() if dot > 0 else ""
 
                                 cat = _ext_categoria(ext)
-                                is_cache = dirpath.split(os.sep)[-1].lower() in CACHE_FOLDER_NAMES
+                                is_cache = dir_is_cache
 
                                 batch.append({
                                     "path": entry.path,
@@ -281,11 +304,17 @@ class DiskScanner:
                                         "bytes":   bytes_snap,
                                     })
 
-                        except (PermissionError, OSError):
-                            pass
+                        except (PermissionError, OSError) as e:
+                            log.warning("ENTRY error  path=%s  exc=%s", entry.path, e)
+                            with self._lock:
+                                self._error_count += 1
+                            self._q.put({"type": "error", "path": entry.path, "msg": str(e)})
 
-            except (PermissionError, OSError):
-                pass
+            except (PermissionError, OSError) as e:
+                log.warning("SCANDIR error  path=%s  exc=%s", dirpath, e)
+                with self._lock:
+                    self._error_count += 1
+                self._q.put({"type": "error", "path": dirpath, "msg": str(e)})
 
             # Vaciar lote restante
             if batch:
@@ -308,6 +337,10 @@ class DiskScanner:
             self._done_count  += 1
             done = self._done_count
 
+        elapsed_f = _time.perf_counter() - t_folder
+        log.info("FOLDER DONE  path=%s  files=%d  bytes=%d  elapsed=%.2fs",
+                 folder_path, folder_files, folder_size, elapsed_f)
+
         parent = os.path.dirname(folder_path)
         self._q.put({
             "type": "folder",
@@ -323,3 +356,58 @@ class DiskScanner:
             "current": folder_path,
             "bytes": self._bytes_total,
         })
+
+
+# ── Verificación de duplicados por hash ───────────────────────────────────────
+
+_HASH_CHUNK = 65536  # 64 KB por lectura
+
+
+def _file_md5(path: str) -> str | None:
+    """Calcula el MD5 de un fichero. Devuelve None si no se puede leer."""
+    h = hashlib.md5()
+    try:
+        with open(path, "rb") as f:
+            while chunk := f.read(_HASH_CHUNK):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def verify_duplicates_by_hash(
+    candidates: dict,
+    cancel_event: threading.Event | None = None,
+) -> dict:
+    """
+    Dado el dict de candidatos {(name, size): [paths, ...]}, calcula el MD5
+    de cada fichero y devuelve solo los grupos con hash idéntico.
+
+    Parámetros
+    ----------
+    candidates  : resultado de DiskScanner.scan → msg["duplicates"]
+    cancel_event: si se activa, interrumpe el proceso y devuelve lo obtenido hasta ese momento
+
+    Retorna
+    -------
+    dict con la misma estructura que candidates pero solo con duplicados reales por contenido:
+      {(name, size): [path1, path2, ...]}
+    """
+    real: dict = {}
+    for (name, size), paths in candidates.items():
+        if cancel_event and cancel_event.is_set():
+            break
+        hash_groups: dict[str, list[str]] = defaultdict(list)
+        for p in paths:
+            if cancel_event and cancel_event.is_set():
+                break
+            md5 = _file_md5(p)
+            if md5:
+                hash_groups[md5].append(p)
+        for h, group in hash_groups.items():
+            if len(group) > 1:
+                key = (name, size)
+                if key not in real:
+                    real[key] = []
+                real[key].extend(group)
+    return real

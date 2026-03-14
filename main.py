@@ -63,7 +63,7 @@ def main():
 
     root.geometry(f"{w}x{h}+{x}+{y}")
     root.minsize(MIN_W, MIN_H)
-    root.title("Disk Analyzer")
+    root.title("Disk Analyzer  —  DKA")
 
     # Icono (si existe)
     icon_path = os.path.join(os.path.dirname(__file__), "icon.ico")

@@ -36,24 +36,34 @@ class TreePanel(ttk.Frame):
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
 
+        # Mini-header de la columna
+        hdr = tk.Frame(self, bg=theme.BG_SURFACE)
+        hdr.grid(row=0, column=0, columnspan=2, sticky="ew")
+        tk.Label(
+            hdr, text="FOLDERS",
+            bg=theme.BG_SURFACE, fg=theme.TEXT_MUTED,
+            font=("Segoe UI Variable", 8, "bold"),
+        ).pack(side="left", padx=10, pady=6)
+
         self._tree = ttk.Treeview(
             self, columns=("size", "pct"),
             selectmode="browse", show="tree headings",
         )
-        self._tree.heading("#0",   text="  Carpeta")
-        self._tree.heading("size", text="Tamaño")
+        self._tree.heading("#0",   text="Name")
+        self._tree.heading("size", text="Size")
         self._tree.heading("pct",  text="%")
         self._tree.column("#0",   width=180, stretch=True)
-        self._tree.column("size", width=80,  anchor="e", stretch=False)
-        self._tree.column("pct",  width=50,  anchor="e", stretch=False)
+        self._tree.column("size", width=72,  anchor="e", stretch=False)
+        self._tree.column("pct",  width=44,  anchor="e", stretch=False)
 
         vsb = ttk.Scrollbar(self, orient="vertical",   command=self._tree.yview)
         hsb = ttk.Scrollbar(self, orient="horizontal", command=self._tree.xview)
         self._tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
-        self._tree.grid(row=0, column=0, sticky="nsew")
-        vsb.grid(row=0, column=1, sticky="ns")
-        hsb.grid(row=1, column=0, sticky="ew")
+        self._tree.grid(row=1, column=0, sticky="nsew")
+        vsb.grid(row=1, column=1, sticky="ns")
+        hsb.grid(row=2, column=0, sticky="ew")
+        self.rowconfigure(1, weight=1)
 
         self._tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         self._tree.bind("<Button-3>", self._show_context_menu)
@@ -62,7 +72,7 @@ class TreePanel(ttk.Frame):
             self, tearoff=False,
             bg=theme.BG_SURFACE, fg=theme.TEXT_PRIMARY,
             activebackground=theme.ACCENT, activeforeground="white",
-            relief="flat", borderwidth=1,
+            relief="flat", borderwidth=0,
         )
         self._ctx_menu.add_command(label="  Abrir en Explorador",
                                    command=self._ctx_open_explorer)
