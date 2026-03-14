@@ -1,5 +1,184 @@
 # Disk Analyzer (DKA)
 
+[English](#english) | [Español](#español)
+
+---
+
+<a id="english"></a>
+# Disk Analyzer (DKA) - English
+
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: Non-Commercial](https://img.shields.io/badge/License-Non_Commercial-red.svg)](#license)
+[![OS: Windows](https://img.shields.io/badge/OS-Windows-lightgrey.svg)]()
+
+A fast and lightweight disk space analyzer GUI for Windows, featuring an **integrated AI Assistant**. Built entirely with Python and `tkinter`, it lets you quickly discover which files and folders are consuming your storage and ask an AI what to do with them.
+
+---
+
+## Key Features
+
+- **Fast Multithreaded Scanning:** Uses `ThreadPoolExecutor` to scan directories in parallel with real-time results.
+- **Tree and Table Views:** Hierarchical folder view and detailed, sortable file table.
+- **Dynamic Filtering:** Filter by file type, minimum size, and name (real-time search).
+- **File Management:** Send to Recycle Bin or permanently delete with confirmation dialogs.
+- **Duplicate Detection:** Find files with the exact same name and size (>1 MB) from `View → Show duplicates`.
+- **Excluded Folders:** Exclude heavy folders from the scan (e.g., `Xilinx`, `node_modules`) from `File → Excluded folders…`. Rules are remembered across sessions.
+- **Integrated AI Assistant:** A side chat panel supporting 4 AI providers. It has access to scan metadata (names, sizes, paths, categories) but **never** to the file contents.
+
+---
+
+## AI Assistant
+
+The right panel of the application includes a chatbot that can answer questions like:
+- *"What is this file for?"*
+- *"Which folder is taking up the most space?"*
+- *"Is it safe to delete these cache files?"*
+- *"What are these duplicate files?"*
+
+### Supported Providers
+
+| Provider | Default Model | Free Tier | Requires Key |
+|-----------|-------------------|---------------|--------------|
+| **Google Gemini** | gemini-2.0-flash-lite | ✓ 1,500 req/day | Yes — [aistudio.google.com](https://aistudio.google.com/app/apikey) |
+| **Groq** | llama-3.3-70b-versatile | ✓ 14,400 req/day | Yes — [console.groq.com](https://console.groq.com/keys) |
+| **Claude (Anthropic)** | claude-haiku-4-5 | Trial credits | Yes — [console.anthropic.com](https://console.anthropic.com/account/keys) |
+| **Ollama (local)** | llama3.2 | ✓ Unlimited | No — requires [Ollama](https://ollama.com) installed |
+
+### AI Configuration
+
+1. Open `AI Chat → API Settings…`
+2. Enter your API key for the desired provider
+3. Select the model from the dropdown (or hit **↺** to fetch available models from the API)
+4. Click **Test connection
+4. Click **Verify Connection** to test it
+5. Click **Save** — settings are securely saved in `%APPDATA%\DiskAnalyzer\api_keys.json`
+
+---
+
+## Screenshots
+
+*(Add screenshots of your application running here)*
+
+---
+
+## Requirements
+
+- **Operating System:** Windows 10 / 11
+- **Python:** 3.10 or higher
+
+### Dependencies
+
+Install the AI assistant dependencies according to the provider you want to use:
+
+```bash
+# All cloud providers at once:
+pip install google-genai groq anthropic
+
+# Only Ollama (local, works offline):
+pip install ollama
+```
+
+> `pywin32` is optional: it improves Recycle Bin support natively. If not installed, an automatic fallback via `ctypes` takes over.
+
+---
+
+## Installation and Usage
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Lizzen/disk_analyzer.git
+   cd disk_analyzer
+   ```
+
+2. (Optional) Install chatbot dependencies:
+   ```bash
+   pip install google-genai groq anthropic
+   ```
+
+3. Run the application:
+   ```bash
+   python main.py
+   ```
+
+---
+
+## Real-Time Scanning Architecture
+
+The scanner runs in a separate thread and communicates with the UI via a `queue.Queue` to prevent freezing.
+
+```mermaid
+graph TD
+    A[Worker Thread: DiskScanner] -->|queue.Queue| B(file_batch / folder / progress / done)
+    B --> C[App._poll_queue — every 40ms]
+    C --> D[TreePanel: folder tree]
+    C --> E[FileTable: row buffer]
+    C --> F[StatusBar: progress]
+    G[App._flush_loop — every 60ms] --> H[FileTable: renders up to 500 rows]
+```
+
+### Scanner Message Types
+
+| Type | Fields |
+|------|--------|
+| `start` | `root`, `n_top` |
+| `folder` | `path`, `parent`, `size`, `file_count` |
+| `file_batch` | `entries: list[dict]` |
+| `progress` | `done`, `total`, `current`, `bytes` |
+| `done` | `total_bytes`, `elapsed`, `duplicates` |
+| `error` | `path`, `msg` |
+
+---
+
+## Keyboard Shortcuts
+
+| Action | Shortcut |
+|--------|-------|
+| New Scan | `F5` |
+| Move to Recycle Bin | `Del` (Delete) |
+| Copy Path | `Ctrl+C` |
+| Open in Explorer | Double Click |
+| Permanent Delete | Right Click → Context Menu |
+
+---
+
+## Table Color Code
+
+| Color | Meaning |
+|-------|-------------|
+| Red | > 1 GB |
+| Orange | > 100 MB |
+| Yellow | > 10 MB |
+| Blue-grey | Cache / Temporary file |
+
+---
+
+## Security & Privacy 
+
+- **Protected Permanent Deletion:** Automatically rejects critical system paths (`C:\`, `C:\Windows`, `C:\System32`, etc.).
+- **No `shell=True`:** Subprocesses use argument lists, preventing malicious command injection.
+- **AI ONLY sees metadata:** The chatbot receives file names, sizes, paths and categories. It **never reads file contents**.
+- **API keys stored safely:** Stored in `%APPDATA%\DiskAnalyzer\api_keys.json`, strictly outside the repository.
+- **Daemon threads:** The scanner uses `daemon=True` so the process terminates completely on exit.
+- **Recycle by default:** Permanent deletion requires an additional explicit confirmation.
+
+---
+
+## License
+
+**Free and Non-Commercial License**.
+
+- **Allowed:** Freely use, view the code, edit, and share your improvements.
+- **Forbidden:** Sell, distribute for a fee, or integrate into commercial products.
+- **Mandatory:** You must keep the copyright notice (`Copyright (c) Lizzen`) on any distributed or modified version.
+
+Check the `LICENSE` file for the full terms.
+
+---
+---
+
+<a id="español"></a>
+# Disk Analyzer (DKA) - Español
+
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non_Commercial-red.svg)](#licencia)
 [![OS: Windows](https://img.shields.io/badge/OS-Windows-lightgrey.svg)]()
