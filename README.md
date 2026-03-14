@@ -7,104 +7,145 @@
 <a id="english"></a>
 # Disk Analyzer (DKA) - English
 
-[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Version](https://img.shields.io/badge/version-0.1.1-indigo.svg)]()
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non_Commercial-red.svg)](#license)
 [![OS: Windows](https://img.shields.io/badge/OS-Windows-lightgrey.svg)]()
 
-A fast and lightweight disk space analyzer GUI for Windows, featuring an **integrated AI Assistant**. Built entirely with Python and `tkinter`, it lets you quickly discover which files and folders are consuming your storage and ask an AI what to do with them.
+A fast, modern disk space analyzer for Windows with an **integrated AI Assistant**. Built entirely with Python and `tkinter`, it lets you discover which files and folders are consuming your storage, clean them up safely, and ask an AI what to do next.
 
 ---
 
 ## Key Features
 
-- **Fast Multithreaded Scanning:** Uses `ThreadPoolExecutor` to scan directories in parallel with real-time results.
-- **Tree and Table Views:** Hierarchical folder view and detailed, sortable file table.
-- **Dynamic Filtering:** Filter by file type, minimum size, and name (real-time search).
-- **File Management:** Send to Recycle Bin or permanently delete with confirmation dialogs.
-- **Duplicate Detection:** Find files with the exact same name and size (>1 MB) from `View → Show duplicates`.
-- **Excluded Folders:** Exclude heavy folders from the scan (e.g., `Xilinx`, `node_modules`) from `File → Excluded folders…`. Rules are remembered across sessions.
-- **Integrated AI Assistant:** A side chat panel supporting 4 AI providers. It has access to scan metadata (names, sizes, paths, categories) but **never** to the file contents.
+- **Fast Multithreaded Scanning:** `os.scandir()` DFS with `ThreadPoolExecutor` — real-time results as it scans.
+- **Modern Dark UI:** Premium dark theme inspired by Linear, Arc and Raycast — hover animations, pill filters, donut disk chart.
+- **Post-scan Summary Panel:** Stat cards (files, folders, total size, duplicates) + top categories bar chart after every scan.
+- **Tree and Table Views:** Hierarchical folder tree and sortable file table with row color coding by size.
+- **Dynamic Filtering:** Category pills, minimum size selector, and real-time name search.
+- **MD5 Duplicate Detection:** Finds files with the same name and size, then verifies them by MD5 hash in the background.
+- **File Management:** Send to Recycle Bin or permanently delete — with protected system path checks.
+- **Excluded Folders:** Skip heavy directories from scanning (e.g. `node_modules`, `Xilinx`) — persisted across sessions.
+- **Scan Logging:** Rotating log files in `logs/` for diagnosing scan issues (`DKA_DEBUG=1` enables console output).
+- **Integrated AI Assistant:** Side chat panel supporting 4 providers — context-aware, with full access to scan metadata.
+- **Tooltips:** Hover over toolbar buttons for instant contextual hints.
 
 ---
 
 ## AI Assistant
 
-The right panel of the application includes a chatbot that can answer questions like:
-- *"What is this file for?"*
-- *"Which folder is taking up the most space?"*
+The right panel includes a chatbot with access to your scan results. Ask it things like:
+
+- *"What is taking up the most space?"*
 - *"Is it safe to delete these cache files?"*
-- *"What are these duplicate files?"*
+- *"Which duplicates should I remove?"*
+- *"Summarise what this scan found."*
 
 ### Supported Providers
 
 | Provider | Default Model | Free Tier | Requires Key |
-|-----------|-------------------|---------------|--------------|
+|---|---|---|---|
 | **Google Gemini** | gemini-2.0-flash-lite | ✓ 1,500 req/day | Yes — [aistudio.google.com](https://aistudio.google.com/app/apikey) |
 | **Groq** | llama-3.3-70b-versatile | ✓ 14,400 req/day | Yes — [console.groq.com](https://console.groq.com/keys) |
 | **Claude (Anthropic)** | claude-haiku-4-5 | Trial credits | Yes — [console.anthropic.com](https://console.anthropic.com/account/keys) |
 | **Ollama (local)** | llama3.2 | ✓ Unlimited | No — requires [Ollama](https://ollama.com) installed |
 
-### AI Configuration
+### Setup
 
 1. Open `AI Chat → API Settings…`
 2. Enter your API key for the desired provider
-3. Select the model from the dropdown (or hit **↺** to fetch available models from the API)
-4. Click **Test connection
+3. Select the model from the dropdown (or press **↺** to fetch available models)
 4. Click **Verify Connection** to test it
-5. Click **Save** — settings are securely saved in `%APPDATA%\DiskAnalyzer\api_keys.json`
+5. Click **Save** — keys are stored in `%APPDATA%\DiskAnalyzer\api_keys.json`
 
 ---
 
 ## Screenshots
 
-*(Add screenshots of your application running here)*
+*(Add screenshots here)*
 
 ---
 
 ## Requirements
 
-- **Operating System:** Windows 10 / 11
-- **Python:** 3.10 or higher
+- **OS:** Windows 10 / 11
+- **Python:** 3.11 or higher
 
 ### Dependencies
 
-Install the AI assistant dependencies according to the provider you want to use:
-
 ```bash
-# All cloud providers at once:
+# All cloud AI providers:
 pip install google-genai groq anthropic
 
-# Only Ollama (local, works offline):
+# Local Ollama only (offline):
 pip install ollama
 ```
 
-> `pywin32` is optional: it improves Recycle Bin support natively. If not installed, an automatic fallback via `ctypes` takes over.
+> `pywin32` is optional — improves Recycle Bin support. If absent, a `ctypes` fallback is used automatically.
 
 ---
 
-## Installation and Usage
+## Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Lizzen/disk_analyzer.git
-   cd disk_analyzer
-   ```
+```bash
+git clone https://github.com/Lizzen/disk_analyzer.git
+cd disk_analyzer
 
-2. (Optional) Install chatbot dependencies:
-   ```bash
-   pip install google-genai groq anthropic
-   ```
+# Optional: install AI dependencies
+pip install google-genai groq anthropic
 
-3. Run the application:
-   ```bash
-   python main.py
-   ```
+python main.py
+```
+
+---
+
+## Project Structure
+
+```text
+disk_analyzer/
+├── main.py                    # Entry point
+├── app.py                     # Main orchestrator: polling loop, dispatcher
+├── core/
+│   ├── models.py              # Data classes: FileEntry, FolderNode, ScanResult
+│   ├── scanner.py             # DFS scanner + MD5 duplicate verification
+│   └── trash.py               # Recycle Bin and safe permanent delete
+├── ui/
+│   ├── theme.py               # Centralized dark palette, ttk styles, blend helpers
+│   ├── toolbar.py             # Top bar: logo, path entry with focus border, buttons
+│   ├── disk_bar.py            # Animated donut chart + disk usage metrics
+│   ├── tree_panel.py          # Folder tree with hover and context menu
+│   ├── file_table.py          # Sortable file table, row color tags, hover
+│   ├── filter_bar.py          # Category pills, size combobox, name search
+│   ├── summary_panel.py       # Post-scan stat cards and category bar chart
+│   ├── status_bar.py          # Progress bar, status dot, inline metrics
+│   ├── tooltip.py             # Floating tooltip with delay and auto-hide
+│   ├── dialogs.py             # Confirm delete and duplicates dialogs
+│   └── exclude_dialog.py      # Scan exclusion list manager
+├── chatbot/
+│   ├── config.py              # API key storage and model config (AppData)
+│   ├── context_builder.py     # Builds system prompt from scan metadata
+│   ├── providers/
+│   │   ├── base.py            # Abstract AIProvider base class
+│   │   ├── gemini.py          # Google Gemini (google-genai)
+│   │   ├── groq_p.py          # Groq (groq)
+│   │   ├── claude.py          # Anthropic Claude (anthropic)
+│   │   └── ollama.py          # Ollama local (ollama)
+│   └── ui/
+│       ├── chat_panel.py      # Streaming chat panel with provider selector
+│       └── settings_dialog.py # API key and model configuration dialog
+├── utils/
+│   ├── formatters.py          # Byte and percentage formatting
+│   └── logger.py              # Rotating file logger (logs/dka_YYYY-MM-DD.log)
+├── tests/
+│   └── test_scanner.py        # 55 unit tests for scanner and models
+└── logs/                      # Auto-created scan log files
+```
 
 ---
 
 ## Real-Time Scanning Architecture
 
-The scanner runs in a separate thread and communicates with the UI via a `queue.Queue` to prevent freezing.
+The scanner runs in a background thread and sends messages to the UI via `queue.Queue`, keeping the UI fully responsive.
 
 ```mermaid
 graph TD
@@ -112,19 +153,21 @@ graph TD
     B --> C[App._poll_queue — every 40ms]
     C --> D[TreePanel: folder tree]
     C --> E[FileTable: row buffer]
-    C --> F[StatusBar: progress]
-    G[App._flush_loop — every 60ms] --> H[FileTable: renders up to 500 rows]
+    C --> F[StatusBar: progress + metrics]
+    C --> G[SummaryPanel: post-scan stats]
+    H[App._flush_loop — every 60ms] --> I[FileTable: renders up to 600 rows/tick]
+    J[Background Thread: MD5 verifier] --> K[ScanResult.duplicates updated]
 ```
 
 ### Scanner Message Types
 
 | Type | Fields |
-|------|--------|
+|---|---|
 | `start` | `root`, `n_top` |
 | `folder` | `path`, `parent`, `size`, `file_count` |
 | `file_batch` | `entries: list[dict]` |
 | `progress` | `done`, `total`, `current`, `bytes` |
-| `done` | `total_bytes`, `elapsed`, `duplicates` |
+| `done` | `total_bytes`, `elapsed`, `duplicates`, `errors` |
 | `error` | `path`, `msg` |
 
 ---
@@ -132,46 +175,61 @@ graph TD
 ## Keyboard Shortcuts
 
 | Action | Shortcut |
-|--------|-------|
-| New Scan | `F5` |
-| Move to Recycle Bin | `Del` (Delete) |
+|---|---|
+| Start Scan | `F5` |
+| Move to Recycle Bin | `Del` |
 | Copy Path | `Ctrl+C` |
-| Open in Explorer | Double Click |
-| Permanent Delete | Right Click → Context Menu |
+| Open in Explorer | Double-click |
+| Permanent Delete | Right-click → Context menu |
 
 ---
 
 ## Table Color Code
 
 | Color | Meaning |
-|-------|-------------|
+|---|---|
 | Red | > 1 GB |
 | Orange | > 100 MB |
-| Yellow | > 10 MB |
-| Blue-grey | Cache / Temporary file |
+| White | > 10 MB |
+| Blue-grey | Cache / temporary file |
 
 ---
 
-## Security & Privacy 
+## Detected File Categories
 
-- **Protected Permanent Deletion:** Automatically rejects critical system paths (`C:\`, `C:\Windows`, `C:\System32`, etc.).
-- **No `shell=True`:** Subprocesses use argument lists, preventing malicious command injection.
-- **AI ONLY sees metadata:** The chatbot receives file names, sizes, paths and categories. It **never reads file contents**.
-- **API keys stored safely:** Stored in `%APPDATA%\DiskAnalyzer\api_keys.json`, strictly outside the repository.
-- **Daemon threads:** The scanner uses `daemon=True` so the process terminates completely on exit.
-- **Recycle by default:** Permanent deletion requires an additional explicit confirmation.
+| Category | Extensions |
+|---|---|
+| Videos | `.mp4`, `.mkv`, `.avi`, `.mov`, `.wmv`, `.ts`… |
+| Images | `.jpg`, `.png`, `.gif`, `.raw`, `.psd`, `.heic`… |
+| Audio | `.mp3`, `.flac`, `.wav`, `.aac`, `.opus`… |
+| Documents | `.pdf`, `.docx`, `.xlsx`, `.txt`, `.epub`… |
+| Installers/ISO | `.iso`, `.exe`, `.msi`, `.zip`, `.7z`, `.rar`… |
+| Temporary/Cache | `.tmp`, `.temp`, `.log`, `.bak`, `.dmp`… |
+| Dev (compiled) | `.pyc`, `.class`, `.obj`, `.pdb`… |
+| Databases | `.db`, `.sqlite`, `.mdf`… |
+
+---
+
+## Security & Privacy
+
+- **Protected permanent deletion:** Rejects critical system paths (`C:\`, `C:\Windows`, `C:\System32`, etc.).
+- **No `shell=True`:** Subprocesses use argument lists — no command injection risk.
+- **AI sees metadata only:** The chatbot receives names, sizes, paths and categories. It never reads file contents.
+- **API keys stored safely:** Saved in `%APPDATA%\DiskAnalyzer\api_keys.json`, outside the repository.
+- **Daemon threads:** Scanner and MD5 verifier use `daemon=True` — process exits cleanly.
+- **Recycle by default:** Permanent deletion requires an additional explicit confirmation dialog.
 
 ---
 
 ## License
 
-**Free and Non-Commercial License**.
+**Free and Non-Commercial License.**
 
-- **Allowed:** Freely use, view the code, edit, and share your improvements.
-- **Forbidden:** Sell, distribute for a fee, or integrate into commercial products.
-- **Mandatory:** You must keep the copyright notice (`Copyright (c) Lizzen`) on any distributed or modified version.
+- **Allowed:** Use, view, modify, and share improvements freely.
+- **Forbidden:** Sell, charge for distribution, or integrate into commercial products.
+- **Required:** Keep the copyright notice (`Copyright (c) Lizzen`) on any distributed or modified version.
 
-Check the `LICENSE` file for the full terms.
+See the `LICENSE` file for full terms.
 
 ---
 ---
@@ -179,38 +237,44 @@ Check the `LICENSE` file for the full terms.
 <a id="español"></a>
 # Disk Analyzer (DKA) - Español
 
-[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Version](https://img.shields.io/badge/version-0.1.1-indigo.svg)]()
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non_Commercial-red.svg)](#licencia)
 [![OS: Windows](https://img.shields.io/badge/OS-Windows-lightgrey.svg)]()
 
-Un analizador de espacio en disco con interfaz gráfica (GUI) rápido y ligero para Windows, con **Asistente de IA integrado**. Construido íntegramente con Python y `tkinter`, te permite descubrir rápidamente qué archivos y carpetas están consumiendo el almacenamiento de tu disco y preguntarle a una IA qué hacer con ellos.
+Un analizador de espacio en disco moderno para Windows con **Asistente de IA integrado**. Construido íntegramente con Python y `tkinter`, permite descubrir qué archivos y carpetas consumen más espacio, limpiarlos con seguridad y preguntar a una IA qué hacer a continuación.
 
 ---
 
 ## Características Principales
 
-- **Escaneo Multihilo Rápido:** Usa `ThreadPoolExecutor` para escanear directorios en paralelo con resultados en tiempo real.
-- **Visualización en Árbol y Tabla:** Vista jerárquica de carpetas y tabla detallada de archivos ordenable.
-- **Filtrado Dinámico:** Filtra por tipo, tamaño mínimo y nombre (búsqueda en tiempo real).
-- **Gestión de Archivos:** Envía a la Papelera o elimina permanentemente con confirmación.
-- **Detección de Duplicados:** Encuentra archivos con mismo nombre y tamaño (>1 MB) desde `Ver → Mostrar duplicados`.
-- **Carpetas Excluidas:** Excluye carpetas pesadas del escaneo (ej. `Xilinx`, `node_modules`) desde `Archivo → Carpetas excluidas…`. Se persisten entre sesiones.
-- **Asistente IA integrado:** Panel de chat lateral con soporte para 4 proveedores de IA. Tiene acceso a los metadatos del escaneo (nombres, tamaños, rutas, categorías) pero **nunca** al contenido de los archivos.
+- **Escaneo Multihilo Rápido:** DFS con `os.scandir()` y `ThreadPoolExecutor` — resultados en tiempo real mientras escanea.
+- **Interfaz Oscura Moderna:** Tema premium inspirado en Linear, Arc y Raycast — animaciones hover, pills de categoría, gráfico donut del disco.
+- **Panel de Resumen Post-Escaneo:** Tarjetas de estadísticas (archivos, carpetas, tamaño total, duplicados) + gráfico de barras de las top categorías.
+- **Árbol y Tabla:** Vista jerárquica de carpetas y tabla de archivos ordenable con código de colores por tamaño.
+- **Filtrado Dinámico:** Pills de categoría, selector de tamaño mínimo y búsqueda en tiempo real por nombre.
+- **Detección de Duplicados con MD5:** Encuentra archivos con mismo nombre y tamaño, luego verifica en segundo plano con hash MD5.
+- **Gestión de Archivos:** Mover a Papelera o eliminar permanentemente — con protección de rutas críticas del sistema.
+- **Carpetas Excluidas:** Omite directorios pesados del escaneo (ej. `node_modules`, `Xilinx`) — se persisten entre sesiones.
+- **Logs de Escaneo:** Archivos de log rotativos en `logs/` para diagnosticar problemas (`DKA_DEBUG=1` activa la salida por consola).
+- **Asistente IA Integrado:** Panel de chat lateral con soporte para 4 proveedores — consciente del contexto del escaneo.
+- **Tooltips:** Pasa el cursor sobre los botones de la barra de herramientas para ver descripciones rápidas.
 
 ---
 
 ## Asistente IA
 
-El panel derecho de la aplicación incluye un chatbot que puede responder preguntas como:
-- *"¿Para qué sirve este archivo?"*
-- *"¿Qué carpeta ocupa más espacio?"*
-- *"¿Puedo eliminar los archivos de caché de forma segura?"*
-- *"¿Qué son estos duplicados?"*
+El panel derecho incluye un chatbot con acceso a los resultados de tu escaneo. Puedes preguntarle:
 
-### Proveedores soportados
+- *"¿Qué está ocupando más espacio?"*
+- *"¿Puedo borrar los archivos de caché de forma segura?"*
+- *"¿Cuáles de estos duplicados debo eliminar?"*
+- *"Resume lo que encontró este escaneo."*
+
+### Proveedores Soportados
 
 | Proveedor | Modelo por defecto | Tier gratuito | Requiere key |
-|-----------|-------------------|---------------|--------------|
+|---|---|---|---|
 | **Google Gemini** | gemini-2.0-flash-lite | ✓ 1.500 req/día | Sí — [aistudio.google.com](https://aistudio.google.com/app/apikey) |
 | **Groq** | llama-3.3-70b-versatile | ✓ 14.400 req/día | Sí — [console.groq.com](https://console.groq.com/keys) |
 | **Claude (Anthropic)** | claude-haiku-4-5 | Créditos trial | Sí — [console.anthropic.com](https://console.anthropic.com/account/keys) |
@@ -220,26 +284,24 @@ El panel derecho de la aplicación incluye un chatbot que puede responder pregun
 
 1. Abre `Chat IA → Configurar APIs…`
 2. Introduce tu API key en el proveedor deseado
-3. Selecciona el modelo con el desplegable (o pulsa **↺** para cargar los modelos disponibles desde la API)
+3. Selecciona el modelo con el desplegable (o pulsa **↺** para cargar los disponibles desde la API)
 4. Pulsa **Verificar conexión** para comprobar que funciona
-5. Pulsa **Guardar** — la configuración se persiste en `%APPDATA%\DiskAnalyzer\api_keys.json`
+5. Pulsa **Guardar** — se persiste en `%APPDATA%\DiskAnalyzer\api_keys.json`
 
 ---
 
 ## Capturas de Pantalla
 
-*(Añade aquí capturas de pantalla de la aplicación funcionando)*
+*(Añade aquí capturas de la aplicación funcionando)*
 
 ---
 
 ## Requisitos
 
 - **Sistema Operativo:** Windows 10 / 11
-- **Python:** 3.10 o superior
+- **Python:** 3.11 o superior
 
 ### Dependencias
-
-Instala las dependencias del asistente IA según el proveedor que quieras usar:
 
 ```bash
 # Todos los proveedores de nube de una vez:
@@ -249,27 +311,21 @@ pip install google-genai groq anthropic
 pip install ollama
 ```
 
-> `pywin32` es opcional: mejora el soporte de la Papelera de Reciclaje. Si no está instalado se usa un fallback automático vía `ctypes`.
+> `pywin32` es opcional — mejora el soporte de la Papelera. Si no está instalado se usa un fallback automático vía `ctypes`.
 
 ---
 
-## Instalación y Uso
+## Instalación
 
-1. Clona el repositorio:
-   ```bash
-   git clone https://github.com/Lizzen/disk_analyzer.git
-   cd disk_analyzer
-   ```
+```bash
+git clone https://github.com/Lizzen/disk_analyzer.git
+cd disk_analyzer
 
-2. (Opcional) Instala dependencias del chatbot:
-   ```bash
-   pip install google-genai groq anthropic
-   ```
+# Opcional: instala dependencias de IA
+pip install google-genai groq anthropic
 
-3. Ejecuta la aplicación:
-   ```bash
-   python main.py
-   ```
+python main.py
+```
 
 ---
 
@@ -277,43 +333,49 @@ pip install ollama
 
 ```text
 disk_analyzer/
-├── main.py                   # Punto de entrada
-├── app.py                    # Orquestador principal (polling loop, dispatcher)
+├── main.py                    # Punto de entrada
+├── app.py                     # Orquestador principal: polling loop, dispatcher
 ├── core/
-│   ├── models.py             # Clases de datos: FileEntry, FolderNode, ScanResult
-│   ├── scanner.py            # Motor de escaneo paralelo con soporte de exclusiones
-│   └── trash.py              # Papelera y borrado seguro
+│   ├── models.py              # Clases de datos: FileEntry, FolderNode, ScanResult
+│   ├── scanner.py             # Scanner DFS + verificación de duplicados por MD5
+│   └── trash.py               # Papelera y borrado permanente seguro
 ├── ui/
-│   ├── toolbar.py            # Barra superior (ruta + botones)
-│   ├── disk_bar.py           # Barra visual de uso de disco
-│   ├── tree_panel.py         # Panel árbol de carpetas
-│   ├── file_table.py         # Tabla de archivos con batch rendering
-│   ├── filter_bar.py         # Filtros (tipo, tamaño, nombre)
-│   ├── status_bar.py         # Barra inferior con métricas y progreso
-│   ├── dialogs.py            # Diálogos: confirmación borrado, duplicados
-│   ├── exclude_dialog.py     # Gestión de carpetas excluidas del escaneo
-│   └── theme.py              # Paleta de colores y estilos ttk centralizados
+│   ├── theme.py               # Paleta oscura, estilos ttk y helpers de color
+│   ├── toolbar.py             # Barra superior: logo, entry de ruta, botones
+│   ├── disk_bar.py            # Gráfico donut animado + métricas de disco
+│   ├── tree_panel.py          # Árbol de carpetas con hover y menú contextual
+│   ├── file_table.py          # Tabla de archivos ordenable con hover y tags de color
+│   ├── filter_bar.py          # Pills de categoría, selector de tamaño, búsqueda
+│   ├── summary_panel.py       # Panel post-escaneo: tarjetas de stats y barras
+│   ├── status_bar.py          # Barra de progreso, dot de estado, métricas inline
+│   ├── tooltip.py             # Tooltip flotante con delay y auto-hide
+│   ├── dialogs.py             # Diálogos de confirmación de borrado y duplicados
+│   └── exclude_dialog.py      # Gestión de carpetas excluidas del escaneo
 ├── chatbot/
-│   ├── config.py             # API keys, modelos y configuración (persiste en AppData)
-│   ├── context_builder.py    # Construye el system prompt con metadatos del escaneo
+│   ├── config.py              # Almacenamiento de API keys y config de modelos
+│   ├── context_builder.py     # Construye el system prompt con metadatos del escaneo
 │   ├── providers/
-│   │   ├── base.py           # Clase abstracta AIProvider
-│   │   ├── gemini.py         # Proveedor Google Gemini (google-genai)
-│   │   ├── groq_p.py         # Proveedor Groq (groq)
-│   │   ├── claude.py         # Proveedor Anthropic Claude (anthropic)
-│   │   └── ollama.py         # Proveedor Ollama local (ollama)
+│   │   ├── base.py            # Clase abstracta AIProvider
+│   │   ├── gemini.py          # Google Gemini (google-genai)
+│   │   ├── groq_p.py          # Groq (groq)
+│   │   ├── claude.py          # Anthropic Claude (anthropic)
+│   │   └── ollama.py          # Ollama local (ollama)
 │   └── ui/
-│       ├── chat_panel.py     # Panel de chat con streaming y selector de proveedor
-│       └── settings_dialog.py# Diálogo de configuración de APIs y modelos
-└── utils/
-    └── formatters.py         # Formateo de bytes y porcentajes
+│       ├── chat_panel.py      # Panel de chat con streaming y selector de proveedor
+│       └── settings_dialog.py # Diálogo de configuración de APIs y modelos
+├── utils/
+│   ├── formatters.py          # Formateo de bytes y porcentajes
+│   └── logger.py              # Logger rotativo (logs/dka_YYYY-MM-DD.log)
+├── tests/
+│   └── test_scanner.py        # 55 tests unitarios del scanner y los modelos
+└── logs/                      # Archivos de log generados automáticamente
 ```
 
 ---
 
 ## Arquitectura de Escaneo en Tiempo Real
 
-El scanner corre en un hilo separado y se comunica con la UI mediante una `queue.Queue`:
+El scanner corre en un hilo separado y envía mensajes a la UI mediante `queue.Queue`, manteniendo la interfaz completamente fluida.
 
 ```mermaid
 graph TD
@@ -321,19 +383,21 @@ graph TD
     B --> C[App._poll_queue — cada 40ms]
     C --> D[TreePanel: árbol de carpetas]
     C --> E[FileTable: buffer de filas]
-    C --> F[StatusBar: progreso]
-    G[App._flush_loop — cada 60ms] --> H[FileTable: renderiza hasta 500 filas]
+    C --> F[StatusBar: progreso y métricas]
+    C --> G[SummaryPanel: resumen post-escaneo]
+    H[App._flush_loop — cada 60ms] --> I[FileTable: renderiza hasta 600 filas/tick]
+    J[Hilo Background: verificador MD5] --> K[ScanResult.duplicates actualizado]
 ```
 
-### Tipos de mensajes del scanner
+### Tipos de Mensajes del Scanner
 
 | Tipo | Campos |
-|------|--------|
+|---|---|
 | `start` | `root`, `n_top` |
 | `folder` | `path`, `parent`, `size`, `file_count` |
 | `file_batch` | `entries: list[dict]` |
 | `progress` | `done`, `total`, `current`, `bytes` |
-| `done` | `total_bytes`, `elapsed`, `duplicates` |
+| `done` | `total_bytes`, `elapsed`, `duplicates`, `errors` |
 | `error` | `path`, `msg` |
 
 ---
@@ -341,8 +405,8 @@ graph TD
 ## Accesos Directos
 
 | Acción | Atajo |
-|--------|-------|
-| Nuevo escaneo | `F5` |
+|---|---|
+| Iniciar escaneo | `F5` |
 | Mover a Papelera | `Supr` (Delete) |
 | Copiar ruta | `Ctrl+C` |
 | Abrir en Explorador | Doble clic en archivo |
@@ -350,40 +414,40 @@ graph TD
 
 ---
 
-## Código de colores en la tabla
+## Código de Colores en la Tabla
 
 | Color | Significado |
-|-------|-------------|
+|---|---|
 | Rojo | > 1 GB |
 | Naranja | > 100 MB |
-| Amarillo | > 10 MB |
+| Blanco | > 10 MB |
 | Gris azulado | Archivo de caché / temporal |
 
 ---
 
-## Categorías de archivos detectadas
+## Categorías de Archivos Detectadas
 
 | Categoría | Extensiones |
-|-----------|-------------|
-| Videos | .mp4, .mkv, .avi, .mov, .wmv, .ts… |
-| Imágenes | .jpg, .png, .gif, .raw, .psd, .heic… |
-| Audio | .mp3, .flac, .wav, .aac, .opus… |
-| Documentos | .pdf, .docx, .xlsx, .txt, .epub… |
-| Instaladores/ISO | .iso, .exe, .msi, .zip, .7z, .rar… |
-| Temporales/Cache | .tmp, .temp, .log, .bak, .dmp… |
-| Desarrollo (compilados) | .pyc, .class, .obj, .pdb… |
-| Bases de datos | .db, .sqlite, .mdf… |
+|---|---|
+| Videos | `.mp4`, `.mkv`, `.avi`, `.mov`, `.wmv`, `.ts`… |
+| Imágenes | `.jpg`, `.png`, `.gif`, `.raw`, `.psd`, `.heic`… |
+| Audio | `.mp3`, `.flac`, `.wav`, `.aac`, `.opus`… |
+| Documentos | `.pdf`, `.docx`, `.xlsx`, `.txt`, `.epub`… |
+| Instaladores/ISO | `.iso`, `.exe`, `.msi`, `.zip`, `.7z`, `.rar`… |
+| Temporales/Cache | `.tmp`, `.temp`, `.log`, `.bak`, `.dmp`… |
+| Desarrollo (compilados) | `.pyc`, `.class`, `.obj`, `.pdb`… |
+| Bases de datos | `.db`, `.sqlite`, `.mdf`… |
 
 ---
 
-## Seguridad
+## Seguridad y Privacidad
 
 - **Borrado permanente protegido:** Rechaza rutas críticas del sistema (`C:\`, `C:\Windows`, `C:\System32`, etc.).
-- **Sin `shell=True`:** Los subprocesos usan listas de argumentos, previniendo inyección de comandos.
+- **Sin `shell=True`:** Los subprocesos usan listas de argumentos — sin riesgo de inyección de comandos.
 - **La IA solo ve metadatos:** El chatbot recibe nombres, tamaños, rutas y categorías. Nunca el contenido de los archivos.
-- **API keys fuera del código:** Las claves se guardan en `%APPDATA%\DiskAnalyzer\api_keys.json`, no en el repositorio.
-- **Hilos daemon:** El scanner usa `daemon=True` para que el proceso termine correctamente al cerrar la ventana.
-- **Mover a Papelera por defecto:** El borrado permanente requiere confirmación explícita adicional.
+- **API keys fuera del código:** Se guardan en `%APPDATA%\DiskAnalyzer\api_keys.json`, no en el repositorio.
+- **Hilos daemon:** El scanner y el verificador MD5 usan `daemon=True` — el proceso termina limpiamente al cerrar.
+- **Mover a Papelera por defecto:** El borrado permanente requiere un diálogo de confirmación adicional.
 
 ---
 
@@ -399,10 +463,10 @@ graph TD
 
 ## Licencia
 
-Licencia **Gratuita y No Comercial**.
+Licencia **Gratuita y No Comercial.**
 
-- **Permitido:** Usar libremente, ver, editar y compartir mejoras.
-- **Prohibido:** Vender, distribuir cobrando, integrar en productos comerciales.
-- **Obligatorio:** Mantener el aviso de copyright (`Copyright (c) Lizzen`) en cualquier versión distribuida.
+- **Permitido:** Usar, ver, modificar y compartir mejoras libremente.
+- **Prohibido:** Vender, cobrar por la distribución o integrar en productos comerciales.
+- **Obligatorio:** Mantener el aviso de copyright (`Copyright (c) Lizzen`) en cualquier versión distribuida o modificada.
 
 Consulta el archivo `LICENSE` para los términos completos.

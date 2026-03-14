@@ -25,6 +25,10 @@ Desktop.ini
 # Logs y bases de datos locales temporales
 *.log
 *.sqlite3
+logs/
+
+# Claude Code
+.claude/
 
 # Compilación / Distribución (si luego usas pyinstaller/cx_Freeze)
 build/

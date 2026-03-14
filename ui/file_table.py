@@ -1,4 +1,6 @@
-"""Tabla principal de archivos con filtrado, ordenamiento y menú contextual."""
+"""
+FileTable v2 — Tabla de archivos con hover, indicadores y menú contextual moderno.
+"""
 
 import tkinter as tk
 from tkinter import ttk
@@ -8,7 +10,6 @@ from utils.formatters import format_size
 from core.trash import open_in_explorer
 import ui.theme as theme
 
-# Iconos Unicode por categoría
 CAT_ICONS = {
     "Videos":                  "🎬",
     "Imagenes":                "🖼",
@@ -22,35 +23,24 @@ CAT_ICONS = {
 }
 
 COLUMNS = [
-    ("name",     "Nombre",    260, "w"),
-    ("size",     "Tamaño",     90, "e"),
-    ("category", "Tipo",      150, "w"),
-    ("ext",      "Extensión",  70, "center"),
-    ("path",     "Ruta",      380, "w"),
+    ("name",     "  Nombre",   270, "w"),
+    ("size",     "Tamaño",      88, "e"),
+    ("category", "Tipo",       145, "w"),
+    ("ext",      "Ext",         58, "center"),
+    ("path",     "Ruta",       390, "w"),
 ]
 
-# Máximo de filas renderizadas en el Treeview en cualquier momento.
-# Con más datos se muestra un aviso; el usuario puede aplicar filtros para reducir.
 DISPLAY_LIMIT = 3_000
 
 
 class FileTable(ttk.Frame):
-    """
-    Tabla de archivos con virtual display.
-
-    Internamente guarda _all_entries (todas) y _visible_entries (filtradas+ordenadas).
-    Solo se renderizan las primeras DISPLAY_LIMIT filas para mantener la UI fluida.
-
-    Mapa _iid_map: path → iid permite remove_paths en O(k) en lugar de O(n).
-    """
-
     def __init__(self, parent, on_delete=None, **kwargs):
         super().__init__(parent, **kwargs)
         self._on_delete = on_delete
 
         self._all_entries:     list[FileEntry] = []
-        self._visible_entries: list[FileEntry] = []  # filtradas + ordenadas
-        self._iid_map:         dict[str, str]  = {}  # path → tree iid
+        self._visible_entries: list[FileEntry] = []
+        self._iid_map:         dict[str, str]  = {}
 
         self._sort_col  = "size"
         self._sort_rev  = True
@@ -60,10 +50,11 @@ class FileTable(ttk.Frame):
 
         self._pending_batch: list[FileEntry] = []
         self._row_counter = 0
+        self._hover_iid   = ""
 
         self._build()
 
-    # ── construcción ─────────────────────────────────────────────────────────
+    # ── construcción ──────────────────────────────────────────────────────────
 
     def _build(self):
         self.rowconfigure(0, weight=1)
@@ -80,12 +71,14 @@ class FileTable(ttk.Frame):
             self._tree.column(col_id, width=width, anchor=anchor,
                               stretch=(col_id == "path"))
 
+        # Tags de color semántico
         self._tree.tag_configure("huge",   background=theme.TAG_HUGE_BG,   foreground=theme.ACCENT_RED)
         self._tree.tag_configure("large",  background=theme.TAG_LARGE_BG,  foreground=theme.ACCENT_AMBER)
         self._tree.tag_configure("medium", background=theme.TAG_MEDIUM_BG, foreground=theme.TEXT_PRIMARY)
         self._tree.tag_configure("cache",  background=theme.TAG_CACHE_BG,  foreground=theme.TAG_CACHE_FG)
         self._tree.tag_configure("odd",    background=theme.TAG_ODD_BG,    foreground=theme.TEXT_PRIMARY)
         self._tree.tag_configure("even",   background=theme.TAG_EVEN_BG,   foreground=theme.TEXT_PRIMARY)
+        self._tree.tag_configure("hover",  background=theme.BG_HOVER)
 
         vsb = ttk.Scrollbar(self, orient="vertical",   command=self._tree.yview)
         hsb = ttk.Scrollbar(self, orient="horizontal", command=self._tree.xview)
@@ -95,31 +88,36 @@ class FileTable(ttk.Frame):
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
 
-        # Label de aviso cuando hay más entradas que DISPLAY_LIMIT
+        # Label overflow
         self._overflow_label = tk.Label(
-            self, text="", bg=theme.BG_SURFACE, fg=theme.TEXT_SECONDARY,
-            font=theme.FONT_SMALL, anchor="w", padx=8,
+            self, text="",
+            bg=theme.BG_SURFACE, fg=theme.TEXT_MUTED,
+            font=theme.FONT_SMALL, anchor="w", padx=12, pady=4,
         )
         self._overflow_label.grid(row=2, column=0, columnspan=2, sticky="ew")
-        self._overflow_label.grid_remove()   # oculto por defecto
+        self._overflow_label.grid_remove()
 
-        self._tree.bind("<Button-3>",       self._show_context_menu)
+        self._tree.bind("<Button-3>",        self._show_context_menu)
         self._tree.bind("<Double-Button-1>", self._on_double_click)
+        self._tree.bind("<Motion>",          self._on_motion)
+        self._tree.bind("<Leave>",           self._on_leave)
 
+        # ── Menú contextual moderno ────────────────────────────────────
         self._ctx = tk.Menu(
             self, tearoff=False,
-            bg=theme.BG_SURFACE, fg=theme.TEXT_PRIMARY,
+            bg=theme.BG_CARD2, fg=theme.TEXT_PRIMARY,
             activebackground=theme.ACCENT, activeforeground="white",
             relief="flat", borderwidth=0,
+            font=theme.FONT_SMALL,
         )
-        self._ctx.add_command(label="  Abrir en Explorador",     command=self._ctx_open)
+        self._ctx.add_command(label="  📂  Abrir en Explorador",      command=self._ctx_open)
         self._ctx.add_separator()
-        self._ctx.add_command(label="  Mover a Papelera",        command=self._ctx_trash)
-        self._ctx.add_command(label="  Eliminar permanentemente", command=self._ctx_delete_perm)
+        self._ctx.add_command(label="  🗑  Mover a Papelera",         command=self._ctx_trash)
+        self._ctx.add_command(label="  ✕  Eliminar permanentemente",  command=self._ctx_delete_perm)
         self._ctx.add_separator()
-        self._ctx.add_command(label="  Copiar ruta",             command=self._ctx_copy)
+        self._ctx.add_command(label="  ⎘  Copiar ruta",               command=self._ctx_copy)
 
-    # ── API pública ───────────────────────────────────────────────────────────
+    # ── API pública ────────────────────────────────────────────────────────────
 
     def clear(self):
         self._tree.delete(*self._tree.get_children())
@@ -128,34 +126,25 @@ class FileTable(ttk.Frame):
         self._pending_batch.clear()
         self._iid_map.clear()
         self._row_counter = 0
+        self._hover_iid   = ""
         self._overflow_label.grid_remove()
 
     def add_entry(self, entry: FileEntry):
-        """Añade al buffer de batch. flush_batch() vuelca al Treeview."""
         self._all_entries.append(entry)
         if self._matches_filter(entry):
             self._pending_batch.append(entry)
 
     def flush_batch(self) -> bool:
-        """
-        Inserta hasta 600 entradas del batch en el Treeview.
-        Solo renderiza hasta DISPLAY_LIMIT filas (las de mayor tamaño).
-        Retorna True si aún quedan entradas pendientes.
-        """
         if not self._pending_batch:
             return False
-
         batch = self._pending_batch[:600]
         self._pending_batch = self._pending_batch[600:]
-
         rendered = len(self._iid_map)
-
         for entry in batch:
             self._visible_entries.append(entry)
             if rendered < DISPLAY_LIMIT:
                 self._insert_row(entry)
                 rendered += 1
-
         self._update_overflow_label()
         return bool(self._pending_batch)
 
@@ -166,19 +155,16 @@ class FileTable(ttk.Frame):
         self._rebuild_visible()
 
     def filter_by_folder(self, folder_path: str):
-        """Muestra solo archivos dentro de folder_path (y sus subdirectorios)."""
         self._filter_cat  = "Todos"
         self._filter_min  = 0
         self._filter_name = ""
         self._visible_entries = [
-            e for e in self._all_entries
-            if e.path.startswith(folder_path)
+            e for e in self._all_entries if e.path.startswith(folder_path)
         ]
         self._visible_entries.sort(key=lambda e: e.size, reverse=True)
         self._render_visible()
 
     def remove_paths(self, paths: set):
-        """Elimina rutas de la tabla. O(k) gracias a _iid_map."""
         self._all_entries     = [e for e in self._all_entries     if e.path not in paths]
         self._visible_entries = [e for e in self._visible_entries if e.path not in paths]
         for path in paths:
@@ -194,7 +180,38 @@ class FileTable(ttk.Frame):
     def entry_count(self) -> int:
         return len(self._all_entries)
 
-    # ── privado ───────────────────────────────────────────────────────────────
+    # ── hover ─────────────────────────────────────────────────────────────────
+
+    def _on_motion(self, event):
+        item = self._tree.identify_row(event.y)
+        if item == self._hover_iid:
+            return
+        if self._hover_iid:
+            try:
+                tags = [t for t in self._tree.item(self._hover_iid, "tags") if t != "hover"]
+                self._tree.item(self._hover_iid, tags=tags)
+            except tk.TclError:
+                pass
+        self._hover_iid = item
+        if item:
+            try:
+                tags = list(self._tree.item(item, "tags"))
+                if "hover" not in tags:
+                    tags.append("hover")
+                self._tree.item(item, tags=tags)
+            except tk.TclError:
+                pass
+
+    def _on_leave(self, _event):
+        if self._hover_iid:
+            try:
+                tags = [t for t in self._tree.item(self._hover_iid, "tags") if t != "hover"]
+                self._tree.item(self._hover_iid, tags=tags)
+            except tk.TclError:
+                pass
+        self._hover_iid = ""
+
+    # ── privado ────────────────────────────────────────────────────────────────
 
     def _matches_filter(self, e: FileEntry) -> bool:
         if self._filter_cat != "Todos" and e.category != self._filter_cat:
@@ -206,7 +223,6 @@ class FileTable(ttk.Frame):
         return True
 
     def _rebuild_visible(self):
-        """Recalcula visible_entries y re-renderiza respetando DISPLAY_LIMIT."""
         self._visible_entries = [e for e in self._all_entries if self._matches_filter(e)]
         self._visible_entries.sort(
             key=lambda e: getattr(e, self._sort_col, e.size),
@@ -215,22 +231,19 @@ class FileTable(ttk.Frame):
         self._render_visible()
 
     def _render_visible(self):
-        """Borra el Treeview y renderiza las primeras DISPLAY_LIMIT entradas."""
-        # delete es mucho más rápido que delete(*children) cuando hay miles
         self._tree.delete(*self._tree.get_children())
         self._iid_map.clear()
         self._row_counter = 0
-
+        self._hover_iid   = ""
         for entry in self._visible_entries[:DISPLAY_LIMIT]:
             self._insert_row(entry)
-
         self._update_overflow_label()
 
     def _insert_row(self, entry: FileEntry) -> str:
         icon = CAT_ICONS.get(entry.category, "📎")
         tag  = self._tag_for(entry)
         vals = (
-            f"{icon}  {entry.name}",
+            f"  {icon}  {entry.name}",
             format_size(entry.size),
             entry.category,
             entry.extension,
@@ -245,24 +258,19 @@ class FileTable(ttk.Frame):
             return ""
 
     def _tag_for(self, entry: FileEntry) -> str:
-        if entry.is_cache:
-            return "cache"
-        if entry.size >= 1024 ** 3:
-            return "huge"
-        if entry.size >= 100 * 1024 ** 2:
-            return "large"
-        if entry.size >= 10 * 1024 ** 2:
-            return "medium"
+        if entry.is_cache:                 return "cache"
+        if entry.size >= 1024 ** 3:        return "huge"
+        if entry.size >= 100 * 1024 ** 2:  return "large"
+        if entry.size >= 10 * 1024 ** 2:   return "medium"
         return "odd" if self._row_counter % 2 == 0 else "even"
 
     def _update_overflow_label(self):
-        total   = len(self._visible_entries)
-        shown   = min(total, DISPLAY_LIMIT)
-        hidden  = total - shown
+        total  = len(self._visible_entries)
+        shown  = min(total, DISPLAY_LIMIT)
+        hidden = total - shown
         if hidden > 0:
             self._overflow_label.config(
-                text=f"  Mostrando {shown:,} de {total:,} archivos  —  "
-                     f"usa los filtros para reducir la selección"
+                text=f"  Mostrando {shown:,} de {total:,} archivos  —  aplica filtros para reducir"
             )
             self._overflow_label.grid()
         else:

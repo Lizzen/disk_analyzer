@@ -15,13 +15,15 @@ from utils import logger as log
 from core.trash import send_to_recycle_bin, delete_permanently, open_in_explorer
 from utils.formatters import format_size
 
-from ui.toolbar   import Toolbar
-from ui.disk_bar  import DiskBar
-from ui.tree_panel import TreePanel
-from ui.file_table import FileTable
-from ui.filter_bar import FilterBar
-from ui.status_bar import StatusBar
-from ui.dialogs   import ConfirmDeleteDialog, DuplicatesDialog
+from ui.toolbar       import Toolbar
+from ui.disk_bar      import DiskBar
+from ui.tree_panel    import TreePanel
+from ui.file_table    import FileTable
+from ui.filter_bar    import FilterBar
+from ui.status_bar    import StatusBar
+from ui.summary_panel import SummaryPanel
+from ui.tooltip       import Tooltip
+from ui.dialogs       import ConfirmDeleteDialog, DuplicatesDialog
 import ui.theme as theme
 
 from chatbot.ui.chat_panel import ChatPanel
@@ -61,6 +63,9 @@ class App(ttk.Frame):
         self._toolbar = Toolbar(self, on_scan=self._start_scan,
                                 on_cancel=self._cancel_scan)
         self._toolbar.pack(fill="x")
+        Tooltip(self._toolbar._btn_scan,   "Iniciar escaneo del directorio seleccionado  (F5)")
+        Tooltip(self._toolbar._btn_cancel, "Cancelar escaneo en curso")
+        Tooltip(self._toolbar._btn_browse, "Seleccionar carpeta…")
 
         # ── DiskBar ──
         self._disk_bar = DiskBar(self)
@@ -83,6 +88,9 @@ class App(ttk.Frame):
         # Panel central: filtros + tabla
         right = ttk.Frame(self._paned, style="Panel.TFrame")
         self._paned.add(right, minsize=380)
+
+        # Panel de resumen post-escaneo (oculto inicialmente)
+        self._summary_panel = SummaryPanel(right, on_close=None)
 
         self._filter_bar = FilterBar(right, on_change=self._on_filter_change)
         self._filter_bar.pack(fill="x")
@@ -327,6 +335,19 @@ class App(ttk.Frame):
             elapsed=msg["elapsed"],
             errors=self._scan_errors,
         )
+
+        # Mostrar panel de resumen
+        cats = {}
+        for e in self._scan_result.files:
+            cats[e.category] = cats.get(e.category, 0) + e.size
+        self._summary_panel.update(
+            files=len(self._scan_result.files),
+            folders=len(self._scan_result.folders),
+            total_bytes=msg["total_bytes"],
+            duplicates=len(self._scan_result.duplicates),
+            categories=cats,
+        )
+        self._summary_panel.show()
 
         log.info("APP scan_done UI update complete  folders=%d  files=%d",
                  len(self._scan_result.folders), len(self._scan_result.files))
