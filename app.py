@@ -23,6 +23,8 @@ from ui.status_bar import StatusBar
 from ui.dialogs   import ConfirmDeleteDialog, DuplicatesDialog
 import ui.theme as theme
 
+from chatbot.ui.chat_panel import ChatPanel
+
 POLL_INTERVAL_MS = 40    # cada cuánto ms se revisa la queue
 FLUSH_EVERY_MS   = 60    # cada cuánto ms se vacía el batch de filas
 POLL_MAX_MSGS    = 500   # máximo mensajes a consumir por tick
@@ -43,6 +45,9 @@ class App(ttk.Frame):
 
         self._build()
         self._apply_theme()
+        # Cargar exclusiones guardadas
+        from ui.exclude_dialog import load_excluded
+        load_excluded()
 
     # ── construcción ─────────────────────────────────────────────────────────
 
@@ -76,9 +81,9 @@ class App(ttk.Frame):
         )
         self._paned.add(self._tree_panel, minsize=160, width=240)
 
-        # Panel derecho: filtros + tabla
+        # Panel central: filtros + tabla
         right = ttk.Frame(self._paned)
-        self._paned.add(right, minsize=400)
+        self._paned.add(right, minsize=380)
 
         self._filter_bar = FilterBar(right, on_change=self._on_filter_change)
         self._filter_bar.pack(fill="x", pady=2)
@@ -90,6 +95,14 @@ class App(ttk.Frame):
             on_delete=self._request_delete_paths,
         )
         self._file_table.pack(fill="both", expand=True)
+
+        # Panel derecho: chatbot
+        self._chat_panel = ChatPanel(
+            self._paned,
+            get_scan_result=lambda: self._scan_result,
+            get_selected_path=self._get_selected_path,
+        )
+        self._paned.add(self._chat_panel, minsize=260, width=300)
 
         # ── StatusBar ──
         ttk.Separator(self).pack(fill="x")
@@ -109,12 +122,24 @@ class App(ttk.Frame):
                               command=lambda: self._toolbar._btn_scan.invoke())
         file_menu.add_command(label="Cancelar escaneo",   command=self._cancel_scan)
         file_menu.add_separator()
+        file_menu.add_command(label="Carpetas excluidas…",
+                              command=self._open_exclude_dialog)
+        file_menu.add_separator()
         file_menu.add_command(label="Salir",              command=self._root.destroy)
 
         view_menu = tk.Menu(menubar, tearoff=False)
         menubar.add_cascade(label="Ver", menu=view_menu)
         view_menu.add_command(label="Mostrar duplicados", command=self._show_duplicates)
         view_menu.add_command(label="Limpiar filtros",    command=self._filter_bar.reset)
+
+        chat_menu = tk.Menu(menubar, tearoff=False)
+        menubar.add_cascade(label="Chat IA", menu=chat_menu)
+        chat_menu.add_command(label="Configurar APIs…",
+                              command=self._open_api_settings)
+        chat_menu.add_separator()
+        chat_menu.add_command(label="Limpiar historial", command=self._chat_panel.clear_history)
+        chat_menu.add_command(label="Adjuntar selección al chat",
+                              command=self._chat_panel._attach_selection)
 
         self._root.bind("<F5>", lambda _: self._toolbar._btn_scan.invoke())
         self._root.bind("<Delete>", self._key_delete)
@@ -274,12 +299,21 @@ class App(ttk.Frame):
 
         self._toolbar.set_scanning(False)
         self._root.title("Disk Analyzer")
+        self._chat_panel.notify_scan_complete(self._scan_result)
         self._status.update_stats(
             folders=len(self._scan_result.folders),
             files=len(self._scan_result.files),
             bytes_total=msg["total_bytes"],
             elapsed=msg["elapsed"],
         )
+
+    def _get_selected_path(self) -> str:
+        """Retorna la ruta del archivo/carpeta actualmente seleccionado en la UI."""
+        # Intentar tabla de archivos primero, luego árbol de carpetas
+        paths = self._file_table._selected_paths()
+        if paths:
+            return paths[0]
+        return self._tree_panel.get_selected_path()
 
     # ── Filtros ───────────────────────────────────────────────────────────────
 
@@ -352,3 +386,13 @@ class App(ttk.Frame):
             return
         DuplicatesDialog(self._root, self._scan_result.duplicates,
                           on_delete=self._request_delete_paths)
+
+    # ── Configuración de APIs ─────────────────────────────────────────────────
+
+    def _open_api_settings(self):
+        from chatbot.ui.settings_dialog import APISettingsDialog
+        APISettingsDialog(self._root, on_save=self._chat_panel.reload_providers)
+
+    def _open_exclude_dialog(self):
+        from ui.exclude_dialog import ExcludeDialog
+        ExcludeDialog(self._root)

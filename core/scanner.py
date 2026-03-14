@@ -21,10 +21,29 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # ── Configuración ─────────────────────────────────────────────────────────────
 
 IGNORAR_CARPETAS: frozenset = frozenset({
+    # Sistema Windows
     "Windows", "System Volume Information", "$Recycle.Bin",
     "Recovery", "PerfLogs", "MSOCache", "WpSystem",
     "WindowsApps", "WinSxS",
 })
+
+# Carpetas que el usuario puede añadir manualmente para excluir del escaneo
+_user_ignore: set[str] = set()
+
+def get_ignore_list() -> list[str]:
+    """Devuelve la lista combinada de carpetas ignoradas (sistema + usuario)."""
+    return sorted(IGNORAR_CARPETAS | _user_ignore)
+
+def add_ignore(name: str):
+    """Añade una carpeta a la lista de ignoradas (solo nombre, no ruta completa)."""
+    _user_ignore.add(name)
+
+def remove_ignore(name: str):
+    """Elimina una carpeta de la lista de ignoradas por el usuario."""
+    _user_ignore.discard(name)
+
+def _should_ignore(name: str) -> bool:
+    return name in IGNORAR_CARPETAS or name in _user_ignore or name.startswith("$")
 
 CATEGORIAS_EXT = {
     "Temporales/Cache": {
@@ -70,8 +89,9 @@ CACHE_FOLDER_NAMES: frozenset = frozenset({
     ".next", ".nuxt", "venv", ".venv", "env",
 })
 
-DUP_MIN_SIZE = 1024 * 1024       # 1 MB — mínimo para candidato a duplicado
-BATCH_SIZE   = 500                # archivos por lote antes de poner en queue
+DUP_MIN_SIZE    = 1024 * 1024    # 1 MB — mínimo para candidato a duplicado
+BATCH_SIZE      = 500            # archivos por lote antes de poner en queue
+PROGRESS_EVERY  = 2000           # emitir progreso cada N archivos dentro de una carpeta
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -165,7 +185,7 @@ class DiskScanner:
             with os.scandir(root_path) as it:
                 for e in it:
                     try:
-                        if e.name in IGNORAR_CARPETAS or e.name.startswith("$"):
+                        if _should_ignore(e.name):
                             continue
                         if e.is_dir(follow_symlinks=False):
                             result.append(e.path)
@@ -186,6 +206,7 @@ class DiskScanner:
         local_dups: dict = defaultdict(list)
         folder_size = 0
         folder_files = 0
+        files_since_progress = 0   # contador para emitir progreso intermedio
 
         # Pila de (dirpath, parent_path) para DFS iterativo sin recursión Python
         stack: list[tuple[str, str]] = [(folder_path, os.path.dirname(folder_path))]
@@ -206,8 +227,7 @@ class DiskScanner:
                             return
                         try:
                             if entry.is_dir(follow_symlinks=False):
-                                name = entry.name
-                                if name in IGNORAR_CARPETAS or name.startswith("$"):
+                                if _should_ignore(entry.name):
                                     continue
                                 stack.append((entry.path, dirpath))
                             else:
@@ -235,8 +255,9 @@ class DiskScanner:
 
                                 dir_size    += s
                                 folder_size += s
-                                dir_file_count += 1
-                                folder_files   += 1
+                                dir_file_count  += 1
+                                folder_files    += 1
+                                files_since_progress += 1
 
                                 if s > DUP_MIN_SIZE:
                                     local_dups[(name.lower(), s)].append(entry.path)
@@ -245,6 +266,20 @@ class DiskScanner:
                                 if len(batch) >= BATCH_SIZE:
                                     self._q.put({"type": "file_batch", "entries": batch})
                                     batch = []
+
+                                # Progreso intermedio: dentro de una carpeta grande
+                                if files_since_progress >= PROGRESS_EVERY:
+                                    files_since_progress = 0
+                                    with self._lock:
+                                        bytes_snap = self._bytes_total + folder_size
+                                        done_snap  = self._done_count
+                                    self._q.put({
+                                        "type":    "progress",
+                                        "done":    done_snap,
+                                        "total":   self._total_top,
+                                        "current": dirpath,
+                                        "bytes":   bytes_snap,
+                                    })
 
                         except (PermissionError, OSError):
                             pass
