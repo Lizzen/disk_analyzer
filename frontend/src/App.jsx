@@ -1334,7 +1334,8 @@ export default function App() {
               </div>
             );
             const isUser = msg.role === "user";
-            const provClr = { gemini:"#4285f4", groq:"#f55036", claude:"#d97706", ollama:"#10b981" }[provider] || C.green;
+            const msgProvider = msg.provider || provider;
+            const provClr = { gemini:"#4285f4", groq:"#f55036", claude:"#d97706", ollama:"#10b981" }[msgProvider] || C.green;
             return (
               <div key={i} className={`flex gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
                 <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5"
@@ -1345,7 +1346,7 @@ export default function App() {
                 <div className="flex flex-col gap-0.5 max-w-[85%]">
                   <span className="text-[9px] font-bold px-1"
                         style={{ color: isUser ? C.accentL : provClr, textAlign: isUser ? "right" : "left" }}>
-                    {isUser ? "Tú" : PROVIDERS.find(p=>p.id===provider)?.label || provider}
+                    {isUser ? "Tú" : (PROVIDERS.find(p=>p.id===msgProvider)?.label || msgProvider)}
                   </span>
                   <div className="rounded-lg px-2.5 py-2 text-[11px] leading-relaxed"
                        style={{
