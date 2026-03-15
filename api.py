@@ -146,6 +146,7 @@ async def scan_socket(websocket: WebSocket):
             if command == "start":
                 path = data.get("path", "C:/")
                 # Normalizar y validar que sea una ruta absoluta real
+                path = os.path.abspath(path)
                 path = os.path.normpath(path)
                 if not os.path.isabs(path) or not os.path.exists(path):
                     await websocket.send_json([{"type": "error", "msg": "Ruta inválida o no existe"}])
