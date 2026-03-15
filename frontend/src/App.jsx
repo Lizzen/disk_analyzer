@@ -710,6 +710,12 @@ export default function App() {
       chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
       scrollThrottleRef.current = null;
     }, 80);
+    return () => {
+      if (scrollThrottleRef.current) {
+        clearTimeout(scrollThrottleRef.current);
+        scrollThrottleRef.current = null;
+      }
+    };
   }, [chatHistory, chatLoading]);
 
   // ── WebSocket ─────────────────────────────────────────────────────────────────
