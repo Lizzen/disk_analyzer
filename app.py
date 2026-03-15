@@ -189,6 +189,8 @@ class App(ttk.Frame):
 
     def _change_theme(self, th_name: str):
         theme.set_theme(th_name, self._root)
+        # Reconstruir los menús para que adopten los colores del nuevo tema
+        self._build_menu()
         self._root.update()
 
     # ── Escaneo ───────────────────────────────────────────────────────────────
