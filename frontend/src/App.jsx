@@ -352,6 +352,9 @@ export default function App() {
 
   // ── Menú contextual de la tabla ───────────────────────────────────────────────
   const [ctxMenu, setCtxMenu] = useState(null); // { x, y, file } | null
+  // { file, mode: "trash"|"permanent" } | null
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [deleteStatus,  setDeleteStatus]  = useState(""); // "", "loading", "ok", "error:..."
 
   // ── Chat ──────────────────────────────────────────────────────────────────────
   const [provider, setProvider]         = useState("gemini");
@@ -1445,30 +1448,135 @@ export default function App() {
               </p>
             </div>
             {[
-              { icon:"📂", label:"Abrir en Explorador", action: async () => {
+              { icon:"📂", label:"Abrir en Explorador", color: C.textPri, action: async () => {
                   await fetch(`${API}/api/open-in-explorer`, {
                     method:"POST", headers:{"Content-Type":"application/json"},
                     body: JSON.stringify({ path: ctxMenu.file.path }),
                   });
               }},
-              { icon:"📋", label:"Copiar ruta", action: () => {
+              { icon:"📋", label:"Copiar ruta", color: C.textPri, action: () => {
                   navigator.clipboard?.writeText(ctxMenu.file.path);
               }},
-              { icon:"📎", label:"Adjuntar al chat", action: () => {
+              { icon:"📎", label:"Adjuntar al chat", color: C.textPri, action: () => {
                   setSelectedPath(ctxMenu.file.path);
               }},
-            ].map(({ icon, label, action }) => (
+            ].map(({ icon, label, color, action }) => (
               <button key={label}
                       onClick={() => { action(); setCtxMenu(null); }}
                       className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-left transition-colors"
-                      style={{ color: C.textPri }}
+                      style={{ color }}
                       onMouseEnter={e => e.currentTarget.style.background = C.bgHover}
                       onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <span>{icon}</span>{label}
               </button>
             ))}
+            {/* Separador */}
+            <div className="my-1 border-t" style={{ borderColor: C.border }} />
+            {/* Eliminar a papelera */}
+            <button
+              onClick={() => { setCtxMenu(null); setDeleteConfirm({ file: ctxMenu.file, mode: "trash" }); setDeleteStatus(""); }}
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-left"
+              style={{ color: C.amber }}
+              onMouseEnter={e => e.currentTarget.style.background = C.bgHover}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <span>🗑️</span>Mover a la Papelera
+            </button>
+            {/* Eliminar permanentemente */}
+            <button
+              onClick={() => { setCtxMenu(null); setDeleteConfirm({ file: ctxMenu.file, mode: "permanent" }); setDeleteStatus(""); }}
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-left"
+              style={{ color: C.red }}
+              onMouseEnter={e => e.currentTarget.style.background = C.bgHover}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <span>⛔</span>Eliminar permanentemente
+            </button>
           </div>
         </>
+      )}
+
+      {/* ════════════════════════════════════════════════════════
+          MODAL CONFIRMAR ELIMINACIÓN
+      ════════════════════════════════════════════════════════ */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 flex items-center justify-center z-50"
+             style={{ background:"rgba(0,0,0,0.75)" }}
+             onClick={e => { if (e.target === e.currentTarget && deleteStatus !== "loading") setDeleteConfirm(null); }}>
+          <div className="rounded-xl overflow-hidden w-[420px] shadow-2xl"
+               style={{ background: C.bgCard, border: `1px solid ${deleteConfirm.mode === "permanent" ? C.red : C.amber}` }}>
+            {/* Header */}
+            <div className="flex items-center gap-3 px-4 py-3 border-b"
+                 style={{ borderColor: C.border, background: C.bgSurface }}>
+              <span className="text-lg">{deleteConfirm.mode === "permanent" ? "⛔" : "🗑️"}</span>
+              <span className="text-sm font-semibold" style={{ color: deleteConfirm.mode === "permanent" ? C.red : C.amber }}>
+                {deleteConfirm.mode === "permanent" ? "Eliminar permanentemente" : "Mover a la Papelera"}
+              </span>
+            </div>
+            {/* Body */}
+            <div className="px-4 py-4">
+              <p className="text-[11px] mb-2" style={{ color: C.textSec }}>
+                {deleteConfirm.mode === "permanent"
+                  ? "Esta acción no se puede deshacer. El archivo será eliminado definitivamente."
+                  : "El archivo se moverá a la Papelera de reciclaje. Podrás recuperarlo desde allí."}
+              </p>
+              <div className="rounded px-3 py-2 font-mono text-[10px] truncate"
+                   style={{ background: C.bgInput, color: C.textMuted, border: `1px solid ${C.border}` }}>
+                {deleteConfirm.file.path}
+              </div>
+              <p className="text-[10px] mt-1" style={{ color: C.textMuted }}>
+                {fmtSize(deleteConfirm.file.size)} · {deleteConfirm.file.category}
+              </p>
+              {/* Error message */}
+              {deleteStatus.startsWith("error:") && (
+                <p className="text-[11px] mt-2 rounded px-2 py-1" style={{ color: C.red, background:"#1f0a14", border:`1px solid ${C.red}` }}>
+                  {deleteStatus.slice(6)}
+                </p>
+              )}
+              {deleteStatus === "ok" && (
+                <p className="text-[11px] mt-2" style={{ color: C.green }}>✓ Eliminado correctamente</p>
+              )}
+            </div>
+            {/* Footer */}
+            <div className="flex justify-end gap-2 px-4 py-3 border-t" style={{ borderColor: C.border }}>
+              <button
+                disabled={deleteStatus === "loading" || deleteStatus === "ok"}
+                onClick={() => setDeleteConfirm(null)}
+                className="px-3 py-1.5 rounded text-[11px]"
+                style={{ background: C.bgSurface, color: C.textSec, border: `1px solid ${C.border}` }}>
+                Cancelar
+              </button>
+              {deleteStatus !== "ok" && (
+                <button
+                  disabled={deleteStatus === "loading"}
+                  onClick={async () => {
+                    setDeleteStatus("loading");
+                    const endpoint = deleteConfirm.mode === "permanent" ? "/api/delete-permanent" : "/api/trash";
+                    try {
+                      const r = await fetch(`${API}${endpoint}`, {
+                        method: "POST", headers: { "Content-Type":"application/json" },
+                        body: JSON.stringify({ path: deleteConfirm.file.path }),
+                      });
+                      const d = await r.json();
+                      if (d.ok) {
+                        setDeleteStatus("ok");
+                        // Quitar el archivo de la lista local
+                        setAllFiles(prev => prev.filter(f => f.path !== deleteConfirm.file.path));
+                        setTimeout(() => setDeleteConfirm(null), 1200);
+                      } else {
+                        setDeleteStatus(`error:${d.error || "Error desconocido"}`);
+                      }
+                    } catch (e) {
+                      setDeleteStatus(`error:${e.message}`);
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded text-[11px] font-semibold"
+                  style={{ background: deleteConfirm.mode === "permanent" ? C.red : C.amber,
+                           color: "#fff", opacity: deleteStatus === "loading" ? 0.6 : 1 }}>
+                  {deleteStatus === "loading" ? "Eliminando…" : (deleteConfirm.mode === "permanent" ? "Eliminar" : "Mover a Papelera")}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ════════════════════════════════════════════════════════

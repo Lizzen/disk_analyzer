@@ -410,6 +410,28 @@ def open_in_explorer_endpoint(body: dict):
         return {"ok": False, "error": str(e)}
 
 
+@app.post("/api/trash")
+def trash_endpoint(body: dict):
+    """Mueve un archivo/carpeta a la Papelera de reciclaje."""
+    path = body.get("path", "")
+    if not path:
+        return {"ok": False, "error": "path requerido"}
+    from core.trash import send_to_recycle_bin
+    ok, err = send_to_recycle_bin(path)
+    return {"ok": ok, "error": err}
+
+
+@app.post("/api/delete-permanent")
+def delete_permanent_endpoint(body: dict):
+    """Elimina un archivo/carpeta de forma permanente (sin papelera)."""
+    path = body.get("path", "")
+    if not path:
+        return {"ok": False, "error": "path requerido"}
+    from core.trash import delete_permanently
+    ok, err = delete_permanently(path)
+    return {"ok": ok, "error": err}
+
+
 # ── Disco ──────────────────────────────────────────────────────────────────────
 
 @app.get("/api/drives")
