@@ -67,10 +67,16 @@ def build_context(
     if scan.elapsed:
         lines.append(f"Tiempo de escaneo: {scan.elapsed:.1f}s")
 
+    # ── helpers para acceso a FileEntry o dict ───────────────────────────────
+    def _get(f, key):
+        return f[key] if isinstance(f, dict) else getattr(f, key)
+
     # ── Resumen por categoría ─────────────────────────────────────────────────
     cat_totals: dict[str, int] = {}
     for f in scan.files:
-        cat_totals[f.category] = cat_totals.get(f.category, 0) + f.size
+        cat  = _get(f, "category")
+        size = _get(f, "size")
+        cat_totals[cat] = cat_totals.get(cat, 0) + size
 
     if cat_totals:
         lines.append("\nResumen por categoría (espacio):")
@@ -88,15 +94,15 @@ def build_context(
                          f"  [{node.file_count} archivos]")
 
     # ── Top archivos más grandes ──────────────────────────────────────────────
-    top_files = sorted(scan.files, key=lambda f: f.size, reverse=True)[:_TOP_FILES]
+    top_files = sorted(scan.files, key=lambda f: _get(f, "size"), reverse=True)[:_TOP_FILES]
     if top_files:
         lines.append(f"\nTop {len(top_files)} archivos más grandes:")
         for f in top_files:
-            cache_tag = "  [CACHE]" if f.is_cache else ""
+            cache_tag = "  [CACHE]" if _get(f, "is_cache") else ""
             lines.append(
-                f"  {f.name}  |  {format_size(f.size)}  |  {f.category}"
-                f"  |  {f.extension or 'sin ext'}{cache_tag}"
-                f"\n    Ruta: {f.path}"
+                f"  {_get(f,'name')}  |  {format_size(_get(f,'size'))}  |  {_get(f,'category')}"
+                f"  |  {_get(f,'extension') or 'sin ext'}{cache_tag}"
+                f"\n    Ruta: {_get(f,'path')}"
             )
 
     # ── Duplicados ────────────────────────────────────────────────────────────
@@ -121,11 +127,11 @@ def build_context(
         lines.append(f"\nElemento seleccionado actualmente por el usuario: {selected_path}")
         # Buscar si es un archivo conocido
         for f in scan.files:
-            if f.path == selected_path:
+            if _get(f, "path") == selected_path:
                 lines.append(
-                    f"  Detalles: {f.name}  |  {format_size(f.size)}"
-                    f"  |  {f.category}  |  {f.extension}"
-                    + ("  [CACHE/TEMP]" if f.is_cache else "")
+                    f"  Detalles: {_get(f,'name')}  |  {format_size(_get(f,'size'))}"
+                    f"  |  {_get(f,'category')}  |  {_get(f,'extension')}"
+                    + ("  [CACHE/TEMP]" if _get(f, "is_cache") else "")
                 )
                 break
         # Buscar si es una carpeta

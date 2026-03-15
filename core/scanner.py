@@ -29,6 +29,8 @@ IGNORAR_CARPETAS: frozenset = frozenset({
     "Windows", "System Volume Information", "$Recycle.Bin",
     "Recovery", "PerfLogs", "MSOCache", "WpSystem",
     "WindowsApps", "WinSxS",
+    # Carpetas de dependencias de desarrollo (enormes, no útiles de escanear individualmente)
+    "node_modules", ".git", "__pycache__", ".venv", "venv", ".env",
 })
 
 # Carpetas que el usuario puede añadir manualmente para excluir del escaneo
