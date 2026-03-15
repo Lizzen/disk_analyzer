@@ -145,6 +145,26 @@ class App(ttk.Frame):
                             activebackground=theme.ACCENT, activeforeground="white",
                             relief="flat", borderwidth=0)
         menubar.add_cascade(label="Ver", menu=view_menu)
+        
+        # --- Selector de temas ---
+        theme_menu = tk.Menu(view_menu, tearoff=False,
+                             bg=theme.BG_SURFACE, fg=theme.TEXT_PRIMARY,
+                             activebackground=theme.ACCENT, activeforeground="white",
+                             relief="flat", borderwidth=0)
+        
+        # Variable to keep the selected theme in sync
+        self._current_theme = tk.StringVar(value=theme.ACTIVE_THEME)
+        
+        for th_name in theme.THEMES.keys():
+            theme_menu.add_radiobutton(label=th_name.replace("_", " ").title(),
+                                       variable=self._current_theme,
+                                       value=th_name,
+                                       command=lambda th=th_name: self._change_theme(th))
+
+        view_menu.add_cascade(label="Temas", menu=theme_menu)
+        view_menu.add_separator()
+        # -------------------------
+        
         view_menu.add_command(label="Mostrar duplicados", command=self._show_duplicates)
         view_menu.add_command(label="Limpiar filtros",    command=self._filter_bar.reset)
 
@@ -166,6 +186,12 @@ class App(ttk.Frame):
 
     def _apply_theme(self):
         theme.apply(self._root)
+
+    def _change_theme(self, th_name: str):
+        theme.set_theme(th_name, self._root)
+        # Reconstruir los menús para que adopten los colores del nuevo tema
+        self._build_menu()
+        self._root.update()
 
     # ── Escaneo ───────────────────────────────────────────────────────────────
 

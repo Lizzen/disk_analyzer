@@ -8,8 +8,9 @@ import sys
 import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse, FileResponse, Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 from typing import Optional
 
 # Ensure project root is in path so chatbot/* imports work
@@ -36,10 +37,14 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # pywebview usa puerto dinámico; en producción solo loopback
-    allow_credentials=False,      # credentials=True es incompatible con allow_origins=["*"]
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # Restringimos CORS a orígenes loopback (localhost/127.0.0.1) en cualquier puerto.
+    # Esto sigue funcionando con el puerto dinámico de pywebview, pero evita que
+    # páginas web arbitrarias puedan hacer requests cross-origin a la API local.
+    allow_origins=[],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 # ── Estado global ──────────────────────────────────────────────────────────────
@@ -51,24 +56,27 @@ last_scan_result:     Optional[ScanResult]        = None   # persiste el último
 
 # ── Modelos ────────────────────────────────────────────────────────────────────
 
+_VALID_PROVIDERS = {"gemini", "groq", "claude", "ollama"}
+
+
 class ChatRequest(BaseModel):
-    message: str
-    provider: str = "gemini"          # gemini | groq | claude | ollama
-    selected_path: str = ""
-    history: list[dict] = []          # [{"role": "user"|"assistant", "content": str}]
-    temperature: float = 0.7          # 0.0–2.0
-    max_tokens: int = 1024            # límite de tokens de respuesta
+    message:       str        = Field(..., min_length=1, max_length=8000)
+    provider:      str        = Field("gemini", pattern=r"^(gemini|groq|claude|ollama)$")
+    selected_path: str        = Field("", max_length=1000)
+    history:       list[dict] = Field(default_factory=list, max_length=40)
+    temperature:   float      = Field(0.7, ge=0.0, le=2.0)
+    max_tokens:    int        = Field(1024, ge=10, le=8192)
 
 
 class ConfigRequest(BaseModel):
-    GEMINI_API_KEY:    Optional[str] = None
-    ANTHROPIC_API_KEY: Optional[str] = None
-    GROQ_API_KEY:      Optional[str] = None
-    DEFAULT_PROVIDER:  Optional[str] = None
-    GEMINI_MODEL:      Optional[str] = None
-    GROQ_MODEL:        Optional[str] = None
-    CLAUDE_MODEL:      Optional[str] = None
-    OLLAMA_MODEL:      Optional[str] = None
+    GEMINI_API_KEY:    Optional[str] = Field(None, max_length=500)
+    ANTHROPIC_API_KEY: Optional[str] = Field(None, max_length=500)
+    GROQ_API_KEY:      Optional[str] = Field(None, max_length=500)
+    DEFAULT_PROVIDER:  Optional[str] = Field(None, pattern=r"^(gemini|groq|claude|ollama)?$")
+    GEMINI_MODEL:      Optional[str] = Field(None, max_length=100)
+    GROQ_MODEL:        Optional[str] = Field(None, max_length=100)
+    CLAUDE_MODEL:      Optional[str] = Field(None, max_length=100)
+    OLLAMA_MODEL:      Optional[str] = Field(None, max_length=100)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -112,9 +120,24 @@ def run_scanner(path: str, q: queue.Queue, cancel_event: threading.Event):
 
 # ── WebSocket: escaneo ─────────────────────────────────────────────────────────
 
+def _is_loopback_origin(origin: str) -> bool:
+    """Devuelve True si el Origin viene de loopback (cualquier puerto) o está vacío (pywebview prod)."""
+    if not origin:
+        return True
+    # Permitir cualquier puerto en 127.0.0.1 o localhost (pywebview usa puerto dinámico)
+    return origin.startswith("http://127.0.0.1:") or origin.startswith("http://localhost:")
+
+
 @app.websocket("/ws/scan")
 async def scan_socket(websocket: WebSocket):
     global current_scan_thread, current_cancel_event, last_scan_result
+
+    origin = websocket.headers.get("origin", "")
+    if not _is_loopback_origin(origin):
+        await websocket.close(code=1008, reason="Unauthorized origin")
+        log.warning("WS rejected non-loopback origin: %s", origin)
+        return
+
     await websocket.accept()
     log.info("WS /ws/scan accepted  client=%s", websocket.client)
 
@@ -122,10 +145,24 @@ async def scan_socket(websocket: WebSocket):
         while True:
             data = await websocket.receive_json()
             command = data.get("action")
-            log.info("WS command=%s  data=%s", command, data)
+            log.info("WS command=%s  action=%s", command, data.get("action"))
 
             if command == "start":
                 path = data.get("path", "C:/")
+                # Normalizar y validar que sea una ruta absoluta real
+                path = os.path.abspath(path)
+                path = os.path.normpath(path)
+                if not os.path.isabs(path) or not os.path.exists(path):
+                    await websocket.send_json(
+                        [
+                            {
+                                "type": "done",
+                                "msg": "Ruta inválida o no existe",
+                                "errors": ["Ruta inválida o no existe"],
+                            }
+                        ]
+                    )
+                    continue
 
                 if current_cancel_event:
                     log.info("WS cancelling previous scan")
@@ -288,8 +325,9 @@ async def chat(req: ChatRequest):
             from chatbot.providers.gemini import GeminiProvider
             provider = GeminiProvider()
     except Exception as e:
+        log.exception("chat: provider init failed")
         async def _err():
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            yield f"data: {json.dumps({'error': 'Error al inicializar el proveedor de IA.'})}\n\n"
         return StreamingResponse(_err(), media_type="text/event-stream")
 
     # Verificar disponibilidad
@@ -318,7 +356,8 @@ async def chat(req: ChatRequest):
             provider.send(messages, on_chunk=on_chunk,
                           temperature=req.temperature, max_tokens=req.max_tokens)
         except Exception as e:
-            loop.call_soon_threadsafe(chunk_queue.put_nowait, {"error": str(e)})
+            log.exception("chat: streaming thread error")
+            loop.call_soon_threadsafe(chunk_queue.put_nowait, {"error": "Error al generar respuesta."})
         finally:
             loop.call_soon_threadsafe(chunk_queue.put_nowait, None)  # sentinel
 
@@ -393,78 +432,159 @@ def ollama_models():
         models = OllamaProvider().available_models()
         return {"models": models, "ok": True}
     except Exception as e:
-        return {"models": [], "ok": False, "error": str(e)}
+        log.warning("ollama_models error: %s", e)
+        return {"models": [], "ok": False, "error": "No se pudo conectar con Ollama"}
+
+
+def _validate_file_path(path: str) -> tuple[bool, str]:
+    """
+    Valida que una ruta sea segura para operar:
+    - No vacía ni demasiado larga
+    - Ruta absoluta y normalizada
+    - Pertenece a una unidad del sistema reconocida
+    Devuelve (ok, error_msg).
+    """
+    if not path or not isinstance(path, str):
+        return False, "path requerido"
+    if len(path) > 1000:
+        return False, "path demasiado largo"
+    norm = os.path.normpath(os.path.abspath(path))
+    # Debe ser ruta absoluta
+    if not os.path.isabs(norm):
+        return False, "path debe ser absoluto"
+    # La unidad debe ser una unidad del sistema reconocida
+    drive = os.path.splitdrive(norm)[0].upper()
+    known = [d.upper() for d in _get_system_drives()]
+    if sys.platform == "win32" and drive not in known:
+        return False, "unidad no reconocida"
+    return True, norm
 
 
 @app.post("/api/open-in-explorer")
 def open_in_explorer_endpoint(body: dict):
     """Abre un archivo/carpeta en el Explorador de Windows."""
-    path = body.get("path", "")
-    if not path:
-        return {"ok": False, "error": "path requerido"}
+    ok, result = _validate_file_path(body.get("path", ""))
+    if not ok:
+        return {"ok": False, "error": result}
     try:
         from core.trash import open_in_explorer
-        open_in_explorer(path)
+        open_in_explorer(result)
         return {"ok": True}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    except Exception:
+        log.exception("open_in_explorer failed for: %s", result)
+        return {"ok": False, "error": "No se pudo abrir en el explorador"}
 
 
 @app.post("/api/trash")
 def trash_endpoint(body: dict):
     """Mueve un archivo/carpeta a la Papelera de reciclaje."""
-    path = body.get("path", "")
-    if not path:
-        return {"ok": False, "error": "path requerido"}
+    ok, result = _validate_file_path(body.get("path", ""))
+    if not ok:
+        return {"ok": False, "error": result}
     from core.trash import send_to_recycle_bin
-    ok, err = send_to_recycle_bin(path)
-    return {"ok": ok, "error": err}
+    ok2, err = send_to_recycle_bin(result)
+    return {"ok": ok2, "error": err}
 
 
 @app.post("/api/delete-permanent")
 def delete_permanent_endpoint(body: dict):
     """Elimina un archivo/carpeta de forma permanente (sin papelera)."""
-    path = body.get("path", "")
-    if not path:
-        return {"ok": False, "error": "path requerido"}
+    ok, result = _validate_file_path(body.get("path", ""))
+    if not ok:
+        return {"ok": False, "error": result}
     from core.trash import delete_permanently
-    ok, err = delete_permanently(path)
-    return {"ok": ok, "error": err}
+    ok2, err = delete_permanently(result)
+    return {"ok": ok2, "error": err}
 
 
 # ── Disco ──────────────────────────────────────────────────────────────────────
 
+def _get_system_drives() -> list[str]:
+    """Obtiene las unidades disponibles usando la API de Windows sin shell."""
+    drives = []
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+            for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+                if bitmask & 1:
+                    drives.append(f"{letter}:")
+                bitmask >>= 1
+        except Exception:
+            drives = ["C:"]
+    else:
+        drives = ["/"]
+    return drives
+
+
 @app.get("/api/drives")
 def get_drives():
-    import shutil
-    drives = []
-    try:
-        result = os.popen("wmic logicaldisk get caption").read()
-        for line in result.split("\n"):
-            line = line.strip()
-            if ":" in line and len(line) <= 3:
-                drives.append(line)
-    except Exception:
-        drives = ["C:"]
-    return {"drives": drives}
+    return {"drives": _get_system_drives()}
 
 
 @app.get("/api/disk-info")
 def get_disk_info(path: str = "C:/"):
     """Devuelve uso de disco para la ruta dada."""
     import shutil
+
+    # Validar que la ruta corresponde a una unidad/raíz conocida del sistema
+    norm = os.path.normpath(path)
+    known_drives = _get_system_drives()
+    # Permitir la raíz de cualquier unidad reconocida (ej: "C:" o "C:\")
+    drive_of_path = os.path.splitdrive(norm)[0].upper()
+    if drive_of_path not in [d.upper() for d in known_drives] and norm not in ["/", "\\"]:
+        return {"error": "Ruta no válida"}
+
     try:
-        total, used, free = shutil.disk_usage(path)
+        total, used, free = shutil.disk_usage(norm)
         pct = round(used / total * 100, 1) if total > 0 else 0
         return {
-            "path":  path,
+            "path":  norm,
             "total": total,
             "used":  used,
             "free":  free,
             "pct":   pct,
         }
     except Exception as e:
-        return {"error": str(e)}
+        log.warning("disk_info error for path %s: %s", norm, e)
+        return {"error": "No se pudo obtener información del disco"}
+
+
+# ── Frontend estático (dist/) ──────────────────────────────────────────────────
+_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
+
+if os.path.isdir(_DIST):
+    # Servir assets con no-cache para que pywebview siempre cargue la versión nueva
+    from starlette.responses import Response as _R
+    from starlette.staticfiles import StaticFiles as _SF
+
+    class _NoCacheStaticFiles(_SF):
+        async def __call__(self, scope, receive, send):
+            # Inyectar no-cache en todos los assets
+            async def send_no_cache(msg):
+                if msg["type"] == "http.response.start":
+                    headers = dict(msg.get("headers", []))
+                    headers[b"cache-control"] = b"no-store, no-cache, must-revalidate"
+                    headers[b"pragma"]        = b"no-cache"
+                    msg = {**msg, "headers": list(headers.items())}
+                await send(msg)
+            await super().__call__(scope, receive, send_no_cache)
+
+    app.mount("/assets", _NoCacheStaticFiles(directory=os.path.join(_DIST, "assets")), name="assets")
+
+    @app.get("/")
+    def serve_index():
+        resp = FileResponse(os.path.join(_DIST, "index.html"), media_type="text/html")
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        resp.headers["Pragma"]        = "no-cache"
+        return resp
+
+    @app.get("/favicon.svg")
+    def serve_favicon():
+        f = os.path.join(_DIST, "favicon.svg")
+        if os.path.isfile(f):
+            return FileResponse(f)
+        return Response(status_code=404)
 
 
 if __name__ == "__main__":

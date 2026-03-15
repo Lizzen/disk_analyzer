@@ -73,16 +73,66 @@ def send_to_recycle_bin(path: str) -> Tuple[bool, str]:
         return False, str(exc)
 
 
-_PROTECTED_PATHS = {
-    os.path.normcase(p) for p in [
+def _build_protected_paths() -> set:
+    """Construye el conjunto de rutas protegidas de forma dinámica."""
+    protected = {
         "C:\\",
         "C:\\Windows",
         "C:\\Windows\\System32",
+        "C:\\Windows\\SysWOW64",
+        "C:\\Windows\\System32\\drivers",
         "C:\\Users",
         "C:\\Program Files",
         "C:\\Program Files (x86)",
-    ]
-}
+        "C:\\ProgramData",
+        "C:\\$Recycle.Bin",
+        "C:\\Recovery",
+        "C:\\System Volume Information",
+    }
+    # Añadir dinámicamente directorios del usuario actual
+    userprofile = os.environ.get("USERPROFILE", "")
+    if userprofile:
+        protected.add(userprofile)                                          # C:\Users\Name
+        protected.add(os.path.join(userprofile, "AppData"))
+        protected.add(os.path.join(userprofile, "AppData", "Roaming"))
+        protected.add(os.path.join(userprofile, "AppData", "Local"))
+    # AppData general
+    appdata = os.environ.get("APPDATA", "")
+    if appdata:
+        protected.add(appdata)
+    localappdata = os.environ.get("LOCALAPPDATA", "")
+    if localappdata:
+        protected.add(localappdata)
+    return {os.path.normcase(p) for p in protected}
+
+
+_PROTECTED_PATHS = _build_protected_paths()
+
+
+def _is_protected(path: str) -> bool:
+    """
+    Devuelve True si la ruta, cualquier ancestro suyo o cualquier
+    descendiente suyo está dentro de una ruta protegida.
+    """
+    norm = os.path.normcase(os.path.abspath(path))
+    if norm in _PROTECTED_PATHS:
+        return True
+    # Bloquear si la ruta ES un ancestro o un descendiente de una ruta protegida.
+    # - ancestro: evita borrar "C:\\Windows\\System" si es padre de System32
+    # - descendiente: evita borrar "C:\\Windows\\Temp" si "C:\\Windows" está protegido
+    for protected in _PROTECTED_PATHS:
+        try:
+            common = os.path.commonpath([norm, protected])
+        except ValueError:
+            # Rutas en diferentes unidades (p. ej. C: vs D:) producen ValueError
+            continue
+        if common == norm and norm != protected:
+            # norm es padre de un path protegido
+            return True
+        if common == protected and norm != protected:
+            # norm es hijo (descendiente) de un path protegido
+            return True
+    return False
 
 
 def delete_permanently(path: str) -> Tuple[bool, str]:
@@ -95,8 +145,7 @@ def delete_permanently(path: str) -> Tuple[bool, str]:
         return False, f"Ruta no encontrada: {path}"
 
     # Protección: rechazar rutas críticas del sistema
-    norm = os.path.normcase(os.path.abspath(path))
-    if norm in _PROTECTED_PATHS:
+    if _is_protected(path):
         return False, f"Ruta protegida del sistema, no se puede eliminar: {path}"
 
     try:

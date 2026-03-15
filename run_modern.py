@@ -74,22 +74,28 @@ def _kill(*procs):
 
 
 def _free_port(port: int) -> None:
-    """Si el puerto está ocupado en Windows, mata el proceso que lo usa."""
+    """Si el puerto está ocupado en Windows, mata el proceso que lo usa (sin shell=True)."""
     if sys.platform != "win32":
         return
     try:
-        out = subprocess.check_output(
-            f'netstat -ano | findstr ":{port} "',
-            shell=True, stderr=subprocess.DEVNULL, text=True,
+        # Usar netstat sin shell: args como lista, nunca interpolación de strings
+        result = subprocess.run(
+            ["netstat", "-ano"],
+            capture_output=True, text=True, timeout=5,
         )
         pids = set()
-        for line in out.splitlines():
-            parts = line.split()
-            if parts and parts[-1].isdigit() and "LISTENING" in line:
-                pids.add(parts[-1])
+        target = f":{port} "
+        for line in result.stdout.splitlines():
+            if target in line and "LISTENING" in line:
+                parts = line.split()
+                if parts and parts[-1].isdigit():
+                    pids.add(int(parts[-1]))
         for pid in pids:
-            subprocess.call(f"taskkill /PID {pid} /F", shell=True,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # taskkill con args como lista — sin shell=True
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/F"],
+                capture_output=True, timeout=5,
+            )
             print(f"  ⚠  Puerto {port} ocupado — proceso {pid} terminado.")
         if pids:
             time.sleep(0.5)

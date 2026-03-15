@@ -8,7 +8,7 @@
 # Disk Analyzer (DKA) - English
 
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-0.2.0-indigo.svg)]()
+[![Version](https://img.shields.io/badge/version-0.3.0-indigo.svg)]()
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non_Commercial-red.svg)](#license)
 [![OS: Windows](https://img.shields.io/badge/OS-Windows-lightgrey.svg)]()
 
@@ -21,20 +21,36 @@ Two interfaces are available:
 
 ---
 
+## What's New in v0.3.0
+
+- **Redesigned AI Chat panel** — modern bubble layout, dynamic status indicator (typing / online), model info bar in header.
+- **Improved ChatMarkdown renderer** — full support for `## headers`, `- lists`, numbered lists, `**bold**`, `*italic*`, `` `inline code` `` and ` ```code blocks``` `, all theme-aware.
+- **Redesigned chat input** — unified textarea with focus ring, integrated send button that activates on input, attached file chip above.
+- **Quick suggestion cards** — icon grid with hover effects shown when chat is empty.
+- **12 visual themes** — Dark Void, Midnight Blue, Forest Dark, Light Vanilla, Profile Neon, Profile Pastel, Dark Premium, Dracula, Nord, Tokyo Night, Catppuccin Mocha, GitHub Dark. Selectable from Settings → Theme.
+- **Expanded model library** — 40+ models across Gemini (10), Groq (25+), Claude (11) with metadata, search and tag filters.
+- **New Groq models** — Llama 4 Scout, Kimi K2, Qwen 3 32B, GPT OSS 120B/20B, Groq Compound/Compound Mini.
+- **Settings panel redesign** — sidebar navigation, per-provider model cards with speed bars and recommended badges, temperature/token sliders with quick presets.
+- **UI performance improvements** — `React.memo` on `FileRow` with custom comparator, `fmtSize` memoization cache, stable `rowData` ref in virtual list, streaming chunks batched every 30ms, chat scroll throttled to 80ms.
+- **Security hardening** — input validation with Pydantic `Field` constraints, `_validate_file_path()` against known drives, `_is_protected()` ancestor checks, no `shell=True` in subprocesses, CORS safe for pywebview dynamic ports.
+- **Context menu delete** — right-click any file to move to Recycle Bin or permanently delete, with confirmation modal.
+
+---
+
 ## Key Features
 
 - **Fast Multithreaded Scanning:** `os.scandir()` DFS with `ThreadPoolExecutor` — real-time results streamed as it scans.
-- **Modern Dark UI:** Premium dark theme inspired by Linear, Arc and Raycast — row color coding, hover animations, donut disk chart.
-- **Virtualized File Table:** `react-window` renders only ~20 DOM nodes regardless of result size — handles 1M+ files smoothly.
+- **Modern Themed UI:** 12 built-in themes (dark, light, Dracula, Nord, Tokyo Night, Catppuccin…) switchable live from Settings.
+- **Virtualized File Table:** Custom virtualizer renders only visible rows regardless of result size — handles 1M+ files smoothly.
 - **Post-scan Summary Panel:** Stat cards (files, folders, total size, duplicates) + top categories breakdown after every scan.
 - **Tree and Table Views:** Hierarchical folder tree and sortable file table with semantic row colors by size and type.
 - **Dynamic Filtering:** Category pills, minimum size selector, and debounced real-time name search.
 - **MD5 Duplicate Detection:** Finds files with the same name and size, then verifies by MD5 hash in the background.
-- **Context Menu:** Right-click any file to open in Explorer, copy path, or attach to the AI chat.
+- **Context Menu:** Right-click any file to open in Explorer, copy path, attach to AI chat, move to Recycle Bin, or permanently delete.
 - **File Management:** Send to Recycle Bin or permanently delete — with protected system path checks.
 - **Excluded Folders:** Skip heavy directories from scanning (e.g. `node_modules`, `Xilinx`) — persisted across sessions.
 - **Scan Logging:** Rotating log files in `logs/` for diagnosing scan issues.
-- **Integrated AI Assistant:** Side chat panel with streaming responses, markdown rendering, and full access to scan metadata.
+- **Integrated AI Assistant:** Side chat panel with streaming responses, full Markdown rendering, and full access to scan metadata.
 
 ---
 
@@ -53,8 +69,8 @@ Right-click any file and select **Attach to chat** to give the AI specific conte
 
 | Provider | Models | Free Tier | Requires Key |
 |---|---|---|---|
-| **Google Gemini** | gemini-2.0-flash-lite, gemini-2.0-flash, gemini-2.5-flash/pro… | ✓ 1,500 req/day | Yes — [aistudio.google.com](https://aistudio.google.com/app/apikey) |
-| **Groq** | llama-3.1-70b, llama-3.3-70b, mixtral-8x7b, deepseek-r1, qwen-qwq… | ✓ 14,400 req/day | Yes — [console.groq.com](https://console.groq.com/keys) |
+| **Google Gemini** | gemini-2.5-flash/pro, gemini-2.0-flash, gemini-1.5-pro/flash… | ✓ 1,500 req/day | Yes — [aistudio.google.com](https://aistudio.google.com/app/apikey) |
+| **Groq** | Llama 4 Scout, Llama 3.3 70B, Kimi K2, Qwen 3 32B, DeepSeek R1, GPT OSS… | ✓ 14,400 req/day | Yes — [console.groq.com](https://console.groq.com/keys) |
 | **Claude (Anthropic)** | claude-haiku-4-5, claude-sonnet-4-5/4-6, claude-opus-4-6… | Trial credits | Yes — [console.anthropic.com](https://console.anthropic.com/account/keys) |
 | **Ollama (local)** | Auto-detected from your local installation | ✓ Unlimited | No — requires [Ollama](https://ollama.com) |
 
@@ -69,7 +85,7 @@ Both are adjustable per-session from the **⚙ Params** tab in the settings pane
 
 1. Open the **⚙ settings** panel in the chat header.
 2. Go to the **🔑 Keys** tab — enter your API key for the desired provider.
-3. Go to the **🤖 Models** tab — select a model from the list or type a custom one. For Ollama, press **↺ detect** to auto-fetch installed models.
+3. Go to the **🤖 Models** tab — select a model from the list (search or filter by tag). For Ollama, press **↺ detect** to auto-fetch installed models.
 4. Press **Verificar** to test the connection.
 5. Press **Guardar** — keys are stored in `%APPDATA%\DiskAnalyzer\api_keys.json`, outside the repository.
 
@@ -166,8 +182,8 @@ disk_analyzer/
 │       ├── claude.py          # Anthropic Claude (anthropic)
 │       └── ollama.py          # Ollama local (ollama) — lists installed models
 ├── frontend/                  # Modern React UI
-│   ├── src/App.jsx            # Main component (~1400 lines)
-│   ├── dist/                  # Pre-built production assets served by pywebview
+│   ├── src/App.jsx            # Main component (~2100 lines)
+│   ├── dist/                  # Pre-built production assets served by FastAPI
 │   └── package.json
 ├── utils/
 │   ├── formatters.py          # Byte and percentage formatting
@@ -190,7 +206,7 @@ graph TD
     A[Worker Thread: DiskScanner] -->|WebSocket batches| B(file_batch / folder / progress / done)
     B --> C[React: allFilesRef / foldersRef accumulation]
     C -->|flush every 500ms| D[React state → VirtualList render]
-    E[POST /api/chat] -->|SSE stream| F[ChatMarkdown component]
+    E[POST /api/chat] -->|SSE stream chunk batching 30ms| F[ChatMarkdown component]
     G[GET /api/ollama/models] --> H[Ollama model selector]
 ```
 
@@ -216,6 +232,8 @@ graph TD
 | `GET` | `/api/providers/status` | Verify all provider connections |
 | `GET` | `/api/ollama/models` | List locally installed Ollama models |
 | `POST` | `/api/open-in-explorer` | Open a path in Windows Explorer |
+| `POST` | `/api/trash` | Move file to Recycle Bin |
+| `POST` | `/api/delete-permanent` | Permanently delete file (with system path guard) |
 
 ---
 
@@ -248,9 +266,11 @@ graph TD
 
 ## Security & Privacy
 
-- **Protected permanent deletion:** Rejects critical system paths (`C:\`, `C:\Windows`, `C:\System32`, etc.).
+- **Protected permanent deletion:** Rejects critical system paths (`C:\`, `C:\Windows`, `C:\System32`, etc.) and their ancestors.
 - **No `shell=True`:** Subprocesses use argument lists — no command injection risk.
+- **Input validation:** All API endpoints validate path lengths, characters, and drive letters via `ctypes.GetLogicalDrives()`.
 - **AI sees metadata only:** The chatbot receives names, sizes, paths and categories. It never reads file contents.
+- **AI code generation blocked:** The system prompt explicitly prohibits the AI from generating scripts or executable code.
 - **API keys stored safely:** Saved in `%APPDATA%\DiskAnalyzer\api_keys.json`, outside the repository — never committed to git.
 - **Daemon threads:** Scanner and MD5 verifier use `daemon=True` — process exits cleanly.
 - **Recycle by default:** Permanent deletion requires an additional explicit confirmation.
@@ -274,7 +294,7 @@ See the `LICENSE` file for full terms.
 # Disk Analyzer (DKA) - Español
 
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-0.2.0-indigo.svg)]()
+[![Version](https://img.shields.io/badge/version-0.3.0-indigo.svg)]()
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non_Commercial-red.svg)](#licencia)
 [![OS: Windows](https://img.shields.io/badge/OS-Windows-lightgrey.svg)]()
 
@@ -287,19 +307,35 @@ Dos interfaces disponibles:
 
 ---
 
+## Novedades en v0.3.0
+
+- **Panel de chat rediseñado** — burbujas modernas, indicador de estado dinámico (escribiendo / en línea), barra de modelo en la cabecera.
+- **Renderizador ChatMarkdown mejorado** — soporte completo para `## encabezados`, `- listas`, listas numeradas, `**negrita**`, `*cursiva*`, `` `código inline` `` y bloques de código, todos adaptados al tema activo.
+- **Input del chat rediseñado** — textarea unificado con focus ring, botón enviar que se activa con texto, chip de archivo adjunto integrado.
+- **Cards de sugerencias rápidas** — grid con iconos y efectos hover cuando el chat está vacío.
+- **12 temas visuales** — Dark Void, Midnight Blue, Forest Dark, Light Vanilla, Profile Neon, Profile Pastel, Dark Premium, Dracula, Nord, Tokyo Night, Catppuccin Mocha, GitHub Dark. Seleccionables desde Ajustes → Tema.
+- **Biblioteca de modelos ampliada** — más de 40 modelos entre Gemini (10), Groq (25+), Claude (11) con metadatos, búsqueda y filtros por etiqueta.
+- **Nuevos modelos de Groq** — Llama 4 Scout, Kimi K2, Qwen 3 32B, GPT OSS 120B/20B, Groq Compound/Compound Mini.
+- **Panel de ajustes rediseñado** — navegación lateral, tarjetas de modelos con barras de velocidad y badge de recomendado, sliders de temperatura/tokens con presets rápidos.
+- **Mejoras de rendimiento de la UI** — `React.memo` en `FileRow` con comparador personalizado, caché de `fmtSize`, ref `rowData` estable en el virtualizador, chunks del streaming agrupados cada 30ms, scroll del chat throttleado a 80ms.
+- **Seguridad reforzada** — validación de inputs con `Field` de Pydantic, `_validate_file_path()` contra unidades conocidas, comprobaciones de ancestros en `_is_protected()`, sin `shell=True` en subprocesos, CORS compatible con puertos dinámicos de pywebview.
+- **Eliminar desde menú contextual** — clic derecho en cualquier archivo para mover a Papelera o eliminar permanentemente, con modal de confirmación.
+
+---
+
 ## Características Principales
 
 - **Escaneo Multihilo Rápido:** DFS con `os.scandir()` y `ThreadPoolExecutor` — resultados en tiempo real mientras escanea.
-- **Interfaz Oscura Moderna:** Tema premium inspirado en Linear, Arc y Raycast — código de colores por tamaño, animaciones hover, gráfico donut del disco.
-- **Tabla Virtualizada:** `react-window` renderiza solo ~20 nodos DOM sin importar el tamaño — fluido con más de 1M de archivos.
+- **Interfaz con Temas:** 12 temas integrados (oscuros, claro, Dracula, Nord, Tokyo Night, Catppuccin…) cambiables en vivo desde Ajustes.
+- **Tabla Virtualizada:** Virtualizador propio renderiza solo las filas visibles sin importar el tamaño — fluido con más de 1M de archivos.
 - **Panel de Resumen Post-Escaneo:** Tarjetas de estadísticas (archivos, carpetas, tamaño total, duplicados) + desglose de categorías.
 - **Árbol y Tabla:** Vista jerárquica de carpetas y tabla de archivos ordenable con colores semánticos por tamaño y tipo.
 - **Filtrado Dinámico:** Pills de categoría, selector de tamaño mínimo y búsqueda por nombre con debounce.
 - **Detección de Duplicados con MD5:** Encuentra archivos con mismo nombre y tamaño, luego verifica en segundo plano.
-- **Menú Contextual:** Clic derecho en cualquier archivo para abrir en Explorador, copiar ruta o adjuntar al chat de IA.
+- **Menú Contextual:** Clic derecho en cualquier archivo para abrir en Explorador, copiar ruta, adjuntar al chat de IA, mover a Papelera o eliminar permanentemente.
 - **Gestión de Archivos:** Mover a Papelera o eliminar permanentemente — con protección de rutas del sistema.
 - **Carpetas Excluidas:** Omite directorios pesados del escaneo — se persisten entre sesiones.
-- **Asistente IA Integrado:** Panel de chat con respuestas en streaming, renderizado Markdown y acceso completo a los metadatos del escaneo.
+- **Asistente IA Integrado:** Panel de chat con respuestas en streaming, renderizado Markdown completo y acceso a los metadatos del escaneo.
 
 ---
 
@@ -318,8 +354,8 @@ Haz clic derecho en cualquier archivo y selecciona **Adjuntar al chat** para dar
 
 | Proveedor | Modelos | Tier gratuito | Requiere key |
 |---|---|---|---|
-| **Google Gemini** | gemini-2.0-flash-lite, gemini-2.0-flash, gemini-2.5-flash/pro… | ✓ 1.500 req/día | Sí — [aistudio.google.com](https://aistudio.google.com/app/apikey) |
-| **Groq** | llama-3.1-70b, llama-3.3-70b, mixtral-8x7b, deepseek-r1, qwen-qwq… | ✓ 14.400 req/día | Sí — [console.groq.com](https://console.groq.com/keys) |
+| **Google Gemini** | gemini-2.5-flash/pro, gemini-2.0-flash, gemini-1.5-pro/flash… | ✓ 1.500 req/día | Sí — [aistudio.google.com](https://aistudio.google.com/app/apikey) |
+| **Groq** | Llama 4 Scout, Llama 3.3 70B, Kimi K2, Qwen 3 32B, DeepSeek R1, GPT OSS… | ✓ 14.400 req/día | Sí — [console.groq.com](https://console.groq.com/keys) |
 | **Claude (Anthropic)** | claude-haiku-4-5, claude-sonnet-4-5/4-6, claude-opus-4-6… | Créditos trial | Sí — [console.anthropic.com](https://console.anthropic.com/account/keys) |
 | **Ollama (local)** | Detectado automáticamente desde tu instalación local | ✓ Sin límite | No — requiere [Ollama](https://ollama.com) |
 
@@ -334,7 +370,7 @@ Ambos ajustables en la pestaña **⚙ Params** del panel de configuración.
 
 1. Abre el panel **⚙ configuración** en la cabecera del chat.
 2. Pestaña **🔑 Keys** — introduce tu API key del proveedor deseado.
-3. Pestaña **🤖 Modelos** — selecciona un modelo de la lista o escribe uno personalizado. Para Ollama, pulsa **↺ detectar** para cargar los modelos instalados.
+3. Pestaña **🤖 Modelos** — selecciona un modelo de la lista (busca o filtra por etiqueta). Para Ollama, pulsa **↺ detectar** para cargar los modelos instalados.
 4. Pulsa **Verificar** para comprobar la conexión.
 5. Pulsa **Guardar** — se guarda en `%APPDATA%\DiskAnalyzer\api_keys.json`, fuera del repositorio.
 
@@ -431,8 +467,8 @@ disk_analyzer/
 │       ├── claude.py          # Anthropic Claude (anthropic)
 │       └── ollama.py          # Ollama local — lista modelos instalados automáticamente
 ├── frontend/                  # Interfaz Web Moderna (React + Vite)
-│   ├── src/App.jsx            # Componente principal (~1400 líneas)
-│   ├── dist/                  # Assets de producción pre-compilados
+│   ├── src/App.jsx            # Componente principal (~2100 líneas)
+│   ├── dist/                  # Assets de producción pre-compilados, servidos por FastAPI
 │   └── package.json
 ├── utils/
 │   ├── formatters.py          # Formateo de bytes y porcentajes
@@ -455,7 +491,7 @@ graph TD
     A[Hilo Worker: DiskScanner] -->|WebSocket en lotes| B(file_batch / folder / progress / done)
     B --> C[React: acumulación en allFilesRef / foldersRef]
     C -->|flush cada 500ms| D[Estado React → VirtualList render]
-    E[POST /api/chat] -->|SSE stream| F[Componente ChatMarkdown]
+    E[POST /api/chat] -->|SSE chunks agrupados 30ms| F[Componente ChatMarkdown]
     G[GET /api/ollama/models] --> H[Selector de modelos Ollama]
 ```
 
@@ -481,6 +517,8 @@ graph TD
 | `GET` | `/api/providers/status` | Verifica la conexión de todos los proveedores |
 | `GET` | `/api/ollama/models` | Lista los modelos Ollama instalados localmente |
 | `POST` | `/api/open-in-explorer` | Abre una ruta en el Explorador de Windows |
+| `POST` | `/api/trash` | Mueve un archivo a la Papelera de reciclaje |
+| `POST` | `/api/delete-permanent` | Elimina permanentemente (con protección de rutas del sistema) |
 
 ---
 
@@ -513,9 +551,11 @@ graph TD
 
 ## Seguridad y Privacidad
 
-- **Borrado permanente protegido:** Rechaza rutas críticas del sistema (`C:\`, `C:\Windows`, `C:\System32`, etc.).
+- **Borrado permanente protegido:** Rechaza rutas críticas del sistema (`C:\`, `C:\Windows`, `C:\System32`, etc.) y sus ancestros.
 - **Sin `shell=True`:** Los subprocesos usan listas de argumentos — sin riesgo de inyección de comandos.
+- **Validación de inputs:** Todos los endpoints validan longitud, caracteres y letras de unidad mediante `ctypes.GetLogicalDrives()`.
 - **La IA solo ve metadatos:** El chatbot recibe nombres, tamaños, rutas y categorías. Nunca el contenido de los archivos.
+- **Generación de código bloqueada en la IA:** El system prompt prohíbe explícitamente generar scripts o código ejecutable.
 - **API keys fuera del código:** Se guardan en `%APPDATA%\DiskAnalyzer\api_keys.json`, fuera del repositorio — nunca se suben a git.
 - **Hilos daemon:** El scanner y el verificador MD5 usan `daemon=True` — el proceso termina limpiamente.
 - **Mover a Papelera por defecto:** El borrado permanente requiere un diálogo de confirmación adicional.
