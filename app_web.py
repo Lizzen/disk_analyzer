@@ -36,9 +36,9 @@ if __name__ == '__main__':
         print("ERROR: FastAPI no arrancó en 10 segundos", file=sys.stderr)
         sys.exit(1)
 
-    dev_url   = "http://localhost:5173"
     prod_path = os.path.join(os.path.dirname(__file__), "frontend", "dist", "index.html")
-    url = dev_url if not os.path.exists(prod_path) else prod_path
+    # Siempre cargar por HTTP para evitar caché de file:// en pywebview
+    url = "http://127.0.0.1:8000" if os.path.exists(prod_path) else "http://localhost:5173"
 
     window = webview.create_window(
         'Disk Analyzer (Modern GUI)',
@@ -48,5 +48,5 @@ if __name__ == '__main__':
         min_size=(800, 600)
     )
 
-    webview.start(debug=False)
+    webview.start(debug=True)
     sys.exit(0)

@@ -8,7 +8,8 @@ import sys
 import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -534,6 +535,43 @@ def get_disk_info(path: str = "C:/"):
     except Exception as e:
         log.warning("disk_info error for path %s: %s", norm, e)
         return {"error": "No se pudo obtener información del disco"}
+
+
+# ── Frontend estático (dist/) ──────────────────────────────────────────────────
+_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
+
+if os.path.isdir(_DIST):
+    # Servir assets con no-cache para que pywebview siempre cargue la versión nueva
+    from starlette.responses import Response as _R
+    from starlette.staticfiles import StaticFiles as _SF
+
+    class _NoCacheStaticFiles(_SF):
+        async def __call__(self, scope, receive, send):
+            # Inyectar no-cache en todos los assets
+            async def send_no_cache(msg):
+                if msg["type"] == "http.response.start":
+                    headers = dict(msg.get("headers", []))
+                    headers[b"cache-control"] = b"no-store, no-cache, must-revalidate"
+                    headers[b"pragma"]        = b"no-cache"
+                    msg = {**msg, "headers": list(headers.items())}
+                await send(msg)
+            await super().__call__(scope, receive, send_no_cache)
+
+    app.mount("/assets", _NoCacheStaticFiles(directory=os.path.join(_DIST, "assets")), name="assets")
+
+    @app.get("/")
+    def serve_index():
+        resp = FileResponse(os.path.join(_DIST, "index.html"), media_type="text/html")
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        resp.headers["Pragma"]        = "no-cache"
+        return resp
+
+    @app.get("/favicon.svg")
+    def serve_favicon():
+        f = os.path.join(_DIST, "favicon.svg")
+        if os.path.isfile(f):
+            return FileResponse(f)
+        return Response(status_code=404)
 
 
 if __name__ == "__main__":
