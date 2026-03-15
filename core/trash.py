@@ -110,19 +110,28 @@ _PROTECTED_PATHS = _build_protected_paths()
 
 
 def _is_protected(path: str) -> bool:
-    """Devuelve True si la ruta o cualquier ancestro suyo está protegido."""
+    """
+    Devuelve True si la ruta, cualquier ancestro suyo o cualquier
+    descendiente suyo está dentro de una ruta protegida.
+    """
     norm = os.path.normcase(os.path.abspath(path))
     if norm in _PROTECTED_PATHS:
         return True
-    # También bloquear si la ruta ES un ancestro de una ruta protegida
-    # (evita borrar "C:\Windows\System" si no está en la lista exacta
-    # pero es padre de System32)
+    # Bloquear si la ruta ES un ancestro o un descendiente de una ruta protegida.
+    # - ancestro: evita borrar "C:\\Windows\\System" si es padre de System32
+    # - descendiente: evita borrar "C:\\Windows\\Temp" si "C:\\Windows" está protegido
     for protected in _PROTECTED_PATHS:
         try:
-            if os.path.commonpath([norm, protected]) == norm and norm != protected:
-                return True  # norm es padre de un path protegido
+            common = os.path.commonpath([norm, protected])
         except ValueError:
-            pass
+            # Rutas en diferentes unidades (p. ej. C: vs D:) producen ValueError
+            continue
+        if common == norm and norm != protected:
+            # norm es padre de un path protegido
+            return True
+        if common == protected and norm != protected:
+            # norm es hijo (descendiente) de un path protegido
+            return True
     return False
 
 
