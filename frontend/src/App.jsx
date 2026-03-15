@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 
 const API = "http://127.0.0.1:8000";
-const APP_VERSION = "0.3.0";
+const APP_VERSION = import.meta.env?.VITE_APP_VERSION ?? "0.3.0";
 
 // ── Themes ────────────────────────────────────────────────────────────────────
 const THEMES = {
