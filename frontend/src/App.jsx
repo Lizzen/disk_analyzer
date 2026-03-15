@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 const API = "http://127.0.0.1:8000";
+const APP_VERSION = "0.3.0";
 
 // ── Themes ────────────────────────────────────────────────────────────────────
 const THEMES = {
@@ -1492,7 +1493,7 @@ export default function App() {
 
                 {/* Version badge */}
                 <div className="px-4 py-2 border-t" style={{ borderColor: C.border }}>
-                  <span className="text-[9px] font-mono" style={{ color: C.textMuted }}>v0.2.2</span>
+                  <span className="text-[9px] font-mono" style={{ color: C.textMuted }}>v{APP_VERSION}</span>
                 </div>
               </div>
 
