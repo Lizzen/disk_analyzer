@@ -46,6 +46,8 @@ class ClaudeProvider(AIProvider):
         self,
         messages: list[Message],
         on_chunk: Callable[[str], None] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
     ) -> str:
         import anthropic
         from chatbot import config as cfg
@@ -54,7 +56,6 @@ class ClaudeProvider(AIProvider):
         model = cfg.CLAUDE_MODEL
         client = anthropic.Anthropic(api_key=key)
 
-        # Separar system del resto
         system = ""
         api_msgs = []
         for m in messages:
@@ -67,10 +68,8 @@ class ClaudeProvider(AIProvider):
             if on_chunk:
                 full = []
                 with client.messages.stream(
-                    model=model,
-                    max_tokens=1024,
-                    system=system,
-                    messages=api_msgs,
+                    model=model, max_tokens=max_tokens,
+                    temperature=temperature, system=system, messages=api_msgs,
                 ) as stream:
                     for text in stream.text_stream:
                         full.append(text)
@@ -78,10 +77,8 @@ class ClaudeProvider(AIProvider):
                 return "".join(full)
             else:
                 resp = client.messages.create(
-                    model=model,
-                    max_tokens=1024,
-                    system=system,
-                    messages=api_msgs,
+                    model=model, max_tokens=max_tokens,
+                    temperature=temperature, system=system, messages=api_msgs,
                 )
                 return resp.content[0].text
         except Exception as exc:

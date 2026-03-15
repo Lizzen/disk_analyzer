@@ -75,17 +75,19 @@ class OllamaProvider(AIProvider):
         self,
         messages: list[Message],
         on_chunk: Callable[[str], None] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
     ) -> str:
         import ollama
 
         api_msgs = [{"role": m.role, "content": m.content} for m in messages]
+        opts = {"temperature": temperature, "num_predict": max_tokens}
 
         try:
             if on_chunk:
                 stream = ollama.chat(
-                    model=self._model,
-                    messages=api_msgs,
-                    stream=True,
+                    model=self._model, messages=api_msgs,
+                    stream=True, options=opts,
                 )
                 full = []
                 for chunk in stream:
@@ -95,7 +97,7 @@ class OllamaProvider(AIProvider):
                         on_chunk(text)
                 return "".join(full)
             else:
-                resp = ollama.chat(model=self._model, messages=api_msgs)
+                resp = ollama.chat(model=self._model, messages=api_msgs, options=opts)
                 return resp["message"]["content"]
         except Exception as exc:
             raise RuntimeError(f"Ollama error: {exc}") from exc

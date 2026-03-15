@@ -42,6 +42,8 @@ class GroqProvider(AIProvider):
         self,
         messages: list[Message],
         on_chunk: Callable[[str], None] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
     ) -> str:
         from groq import Groq
         from chatbot import config as cfg
@@ -55,10 +57,8 @@ class GroqProvider(AIProvider):
         try:
             if on_chunk:
                 stream = client.chat.completions.create(
-                    model=model,
-                    messages=api_msgs,
-                    max_tokens=1024,
-                    stream=True,
+                    model=model, messages=api_msgs,
+                    temperature=temperature, max_tokens=max_tokens, stream=True,
                 )
                 full = []
                 for chunk in stream:
@@ -69,9 +69,8 @@ class GroqProvider(AIProvider):
                 return "".join(full)
             else:
                 resp = client.chat.completions.create(
-                    model=model,
-                    messages=api_msgs,
-                    max_tokens=1024,
+                    model=model, messages=api_msgs,
+                    temperature=temperature, max_tokens=max_tokens,
                 )
                 return resp.choices[0].message.content
         except Exception as exc:

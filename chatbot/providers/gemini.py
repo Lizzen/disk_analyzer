@@ -41,6 +41,8 @@ class GeminiProvider(AIProvider):
         self,
         messages: list[Message],
         on_chunk: Callable[[str], None] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
     ) -> str:
         from google import genai
         from google.genai import types
@@ -50,7 +52,6 @@ class GeminiProvider(AIProvider):
         _MODEL = cfg.GEMINI_MODEL
         client = genai.Client(api_key=key)
 
-        # Separar system prompt del historial
         system_content = None
         chat_msgs: list[Message] = []
         for m in messages:
@@ -59,7 +60,6 @@ class GeminiProvider(AIProvider):
             else:
                 chat_msgs.append(m)
 
-        # Construir historial (todo menos el último mensaje)
         history = []
         for m in chat_msgs[:-1]:
             role = "user" if m.role == "user" else "model"
@@ -67,7 +67,7 @@ class GeminiProvider(AIProvider):
 
         last = chat_msgs[-1].content if chat_msgs else ""
 
-        config_kwargs = {}
+        config_kwargs: dict = {"temperature": temperature, "max_output_tokens": max_tokens}
         if system_content:
             config_kwargs["system_instruction"] = system_content
 
@@ -76,7 +76,7 @@ class GeminiProvider(AIProvider):
                 stream = client.models.generate_content_stream(
                     model=_MODEL,
                     contents=history + [types.Content(role="user", parts=[types.Part(text=last)])],
-                    config=types.GenerateContentConfig(**config_kwargs) if config_kwargs else None,
+                    config=types.GenerateContentConfig(**config_kwargs),
                 )
                 full = []
                 for chunk in stream:
@@ -89,7 +89,7 @@ class GeminiProvider(AIProvider):
                 response = client.models.generate_content(
                     model=_MODEL,
                     contents=history + [types.Content(role="user", parts=[types.Part(text=last)])],
-                    config=types.GenerateContentConfig(**config_kwargs) if config_kwargs else None,
+                    config=types.GenerateContentConfig(**config_kwargs),
                 )
                 return response.text or ""
         except Exception as exc:

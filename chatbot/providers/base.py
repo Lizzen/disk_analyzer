@@ -47,6 +47,8 @@ class AIProvider(ABC):
         self,
         messages: list[Message],
         on_chunk: Callable[[str], None] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
     ) -> str:
         """
         Envía los mensajes al LLM y devuelve la respuesta completa.
