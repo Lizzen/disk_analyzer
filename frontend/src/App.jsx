@@ -182,6 +182,52 @@ const THEMES = {
     tagHugeBg:"#3a1d1d", tagLargeBg:"#3d3016", tagMedBg:"#112e3e",
     tagCacheBg:"#2b1c3f", tagCacheFg:"#bc8cff", tagOddBg:"#0d1117", tagEvenBg:"#161b22",
   },
+  // ── Variantes Logo Crystal ─────────────────────────────────────────────────
+  // Variante 1: Crystal Dark — fondo negro-indigo, acento cyan neon
+  "logo-crystal": {
+    label: "Crystal Dark", preview: ["#0e0b18","#6ecce8","#e8dff8"],
+    bgDark:"#0e0b18", bgPanel:"#14102a", bgSurface:"#1a1535",
+    bgCard:"#211a42", bgCard2:"#2d2655", bgInput:"#090713",
+    bgHover:"#2d2655", bgSelected:"#1e1840",
+    border:"#3a2e6a", borderFocus:"#6ecce8",
+    textPri:"#e8dff8", textSec:"#9b8ec4", textMuted:"#5c5080", textAccent:"#6ecce8",
+    accent:"#6ecce8", accentL:"#aae4f4", accentD:"#2a9ab8",
+    green:"#50e8b0", amber:"#f0b840", red:"#d070c0",
+    purple:"#b070f0", cyan:"#6ecce8", blue:"#7878b8",
+    diskTrack:"#2d2655",
+    tagHugeBg:"#2a0b1e", tagLargeBg:"#281c06", tagMedBg:"#071e28",
+    tagCacheBg:"#160b2c", tagCacheFg:"#b070f0", tagOddBg:"#110e1e", tagEvenBg:"#160f24",
+  },
+  // Variante 2: Crystal Dusk — indigo medio, acento violeta-perla
+  "logo-dusk": {
+    label: "Crystal Dusk", preview: ["#1e1a38","#a890d8","#e4ddf4"],
+    bgDark:"#1e1a38", bgPanel:"#252048", bgSurface:"#2e2858",
+    bgCard:"#383268", bgCard2:"#423c78", bgInput:"#181430",
+    bgHover:"#423c78", bgSelected:"#302a60",
+    border:"#504890", borderFocus:"#a890d8",
+    textPri:"#e4ddf4", textSec:"#a090c8", textMuted:"#6a6098", textAccent:"#a890d8",
+    accent:"#a890d8", accentL:"#ccc0ec", accentD:"#7860b0",
+    green:"#50e8b0", amber:"#f0b840", red:"#d070c0",
+    purple:"#a890d8", cyan:"#6ecce8", blue:"#7878b8",
+    diskTrack:"#423c78",
+    tagHugeBg:"#38182c", tagLargeBg:"#342808", tagMedBg:"#0e2034",
+    tagCacheBg:"#28183e", tagCacheFg:"#a890d8", tagOddBg:"#201c38", tagEvenBg:"#252048",
+  },
+  // Variante 3: Crystal Mist — fondo lavanda claro (el fondo del logo)
+  "logo-mist": {
+    label: "Crystal Mist", preview: ["#c4b5d8","#3d3870","#12101e"],
+    bgDark:"#c4b5d8", bgPanel:"#d4c8e8", bgSurface:"#e2d8f0",
+    bgCard:"#cfc0e4", bgCard2:"#c8b8e0", bgInput:"#ddd0f0",
+    bgHover:"#b8a8cc", bgSelected:"#a898c0",
+    border:"#a898c4", borderFocus:"#3d3870",
+    textPri:"#12101e", textSec:"#3d3870", textMuted:"#7878b8", textAccent:"#2a1860",
+    accent:"#3d3870", accentL:"#6868a8", accentD:"#1e1a50",
+    green:"#1a8060", amber:"#b07010", red:"#a03080",
+    purple:"#6040a8", cyan:"#2a8ab0", blue:"#3848a0",
+    diskTrack:"#b0a0c8",
+    tagHugeBg:"#f0d4e4", tagLargeBg:"#f0e8cc", tagMedBg:"#cce4f0",
+    tagCacheBg:"#e4ccf4", tagCacheFg:"#6040a8", tagOddBg:"#d4c8e8", tagEvenBg:"#ddd0f0",
+  },
 };
 
 const _savedTheme = localStorage.getItem("da-theme") || "logo-neon";
