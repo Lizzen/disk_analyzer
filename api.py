@@ -37,7 +37,11 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],      # pywebview usa puerto dinámico loopback — restringido por _is_loopback_origin
+    # Restringimos CORS a orígenes loopback (localhost/127.0.0.1) en cualquier puerto.
+    # Esto sigue funcionando con el puerto dinámico de pywebview, pero evita que
+    # páginas web arbitrarias puedan hacer requests cross-origin a la API local.
+    allow_origins=[],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
