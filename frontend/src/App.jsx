@@ -9,8 +9,9 @@ import {
   Key, Cpu, Sliders, Palette, Eye, EyeOff, RefreshCw, Save, Zap,
   Trash2, ExternalLink, PlayCircle, Clipboard, ScanLine, History,
   LayoutGrid, CalendarDays, Download, Table2,
-  Star, GitCompare, Bell, BookOpen, Plus, Minus, ArrowRight, Image as ImageIcon
+  Star, GitCompare, Bell, BookOpen, Plus, Minus, ArrowRight
 } from "lucide-react";
+import mermaid from "mermaid";
 
 const API = "http://127.0.0.1:8000";
 const APP_VERSION = import.meta.env?.VITE_APP_VERSION ?? "0.3.0";
@@ -408,15 +409,63 @@ function SortIcon({ col, sortCol, sortAsc, C }) {
     : <ChevronDown size={11} className="ml-0.5" style={{ color: C.accentL }} />;
 }
 
+// ── MermaidDiagram: renderiza un diagrama Mermaid en el chat ─────────────────
+let _mermaidReady = false;
+function ensureMermaid() {
+  if (_mermaidReady) return;
+  mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "loose",
+    themeVariables: { primaryColor: "#6366f1", primaryTextColor: "#e2e8f0",
+      primaryBorderColor: "#4f46e5", lineColor: "#818cf8", background: "#0f0f1a",
+      mainBkg: "#1a1a2e", nodeBorder: "#4f46e5", clusterBkg: "#1a1a2e",
+      titleColor: "#a5b4fc", edgeLabelBackground: "#1a1a2e", fontFamily: "monospace" } });
+  _mermaidReady = true;
+}
+let _mermaidCounter = 0;
+const MermaidDiagram = memo(function MermaidDiagram({ code, C }) {
+  const ref = useRef(null);
+  const idRef = useRef(null);
+  if (!idRef.current) idRef.current = `mermaid-${++_mermaidCounter}`;
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ensureMermaid();
+    // Use a fresh unique ID each render to avoid Mermaid's internal ID cache
+    const id = `mermaid-render-${++_mermaidCounter}`;
+    setError(null);
+    // Remove any stale element with this id that Mermaid may have left in the DOM
+    document.getElementById(id)?.remove();
+    mermaid.render(id, code.trim()).then(({ svg }) => {
+      if (ref.current) ref.current.innerHTML = svg;
+    }).catch(err => {
+      setError(String(err?.message || err));
+    });
+  }, [code]);
+
+  if (error) return (
+    <pre className="rounded-lg text-[10px] p-3 my-1.5 overflow-x-auto font-mono leading-relaxed"
+         style={{ background: C?.bgDark || "#0a0a12", color: "#f87171",
+                  border:`1px solid #f8717140` }}>
+      {`[Mermaid error]\n${error}\n\n${code}`}
+    </pre>
+  );
+  return (
+    <div ref={ref} className="my-2 rounded-xl overflow-x-auto flex justify-center"
+         style={{ background: "#0f0f1a", border:`1px solid ${C?.border || "#2a2a40"}`,
+                  padding: "12px", minHeight: "60px" }} />
+  );
+});
+
 // ── ChatMarkdown: renderiza markdown básico con listas, headers, bold, code ──
 const ChatMarkdown = memo(function ChatMarkdown({ text, C }) {
-  // Separar bloques de código primero
+  // Separar bloques de código primero (capturando el lenguaje)
   const parts = [];
-  const codeBlockRe = /```(?:\w+\n?)?([\s\S]*?)```/g;
+  const codeBlockRe = /```(\w+)?\n?([\s\S]*?)```/g;
   let last = 0, m;
   while ((m = codeBlockRe.exec(text)) !== null) {
     if (m.index > last) parts.push({ type:"text", val: text.slice(last, m.index) });
-    parts.push({ type:"block", val: m[1].trimEnd() });
+    const lang = (m[1] || "").toLowerCase();
+    parts.push({ type: lang === "mermaid" ? "mermaid" : "block", val: m[2].trimEnd(), lang });
     last = m.index + m[0].length;
   }
   if (last < text.length) parts.push({ type:"text", val: text.slice(last) });
@@ -515,6 +564,7 @@ const ChatMarkdown = memo(function ChatMarkdown({ text, C }) {
   return (
     <div className="space-y-1">
       {parts.map((p, i) => {
+        if (p.type === "mermaid") return <MermaidDiagram key={i} code={p.val} C={C} />;
         if (p.type === "block") return (
           <pre key={i} className="rounded-lg text-[10px] p-3 my-1.5 overflow-x-auto font-mono leading-relaxed"
                style={{ background: C?.bgDark || "#0a0a12", color: C?.green || "#a0f0c0",
@@ -1516,10 +1566,6 @@ export default function App() {
   const [riskAlerts, setRiskAlerts]     = useState([]);
   const [showRiskPanel, setShowRiskPanel] = useState(false);
 
-  // ── Imagen adjunta al chat ────────────────────────────────────────────────────
-  const [attachedImage, setAttachedImage] = useState(null); // {b64, mime, preview}
-  const imageInputRef = useRef(null);
-
   // ── Favoritos ─────────────────────────────────────────────────────────────────
   const [favorites, setFavorites] = useState(() => {
     try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]"); } catch { return []; }
@@ -1974,9 +2020,7 @@ export default function App() {
     const msg = (text ?? chatInputRef.current).trim();
     if (!msg || chatLoadingRef.current) return;
     chatLoadingRef.current = true;
-    // Capturar imagen antes de limpiar el estado
-    const imgSnapshot = attachedImage;
-    setChatInput(""); setChatError(""); setAttachedImage(null);
+    setChatInput(""); setChatError("");
     setChatHistory(prev => [...prev, { role:"user", content:msg }, { role:"assistant", content:"", provider: providerRef.current }]);
     setChatLoading(true);
     try {
@@ -1988,7 +2032,6 @@ export default function App() {
         temperature:   temperatureRef.current,
         max_tokens:    maxTokensRef.current,
       };
-      if (imgSnapshot) { body.image_b64 = imgSnapshot.b64; body.image_mime = imgSnapshot.mime; }
       const res = await fetch(`${API}/api/chat`, {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify(body),
@@ -3341,25 +3384,6 @@ export default function App() {
 
         {/* ── Input ── */}
         <div className="px-3 pt-2 pb-3 shrink-0 border-t" style={{ background: C.bgPanel, borderColor: C.border }}>
-          {/* Input oculto para imagen */}
-          <input ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp"
-                 style={{ display:"none" }}
-                 onChange={e => {
-                   const file = e.target.files?.[0];
-                   if (!file) return;
-                   if (file.size > 5 * 1024 * 1024) {
-                     _emitToast({ id: ++_toastId, msg: "La imagen supera los 5 MB permitidos", type:"warning", duration:3000 });
-                     return;
-                   }
-                   const reader = new FileReader();
-                   reader.onload = ev => {
-                     const dataUrl = ev.target.result;
-                     setAttachedImage({ b64: dataUrl.split(",")[1], mime: file.type, preview: URL.createObjectURL(file) });
-                   };
-                   reader.readAsDataURL(file);
-                   e.target.value = "";
-                 }} />
-
           {/* Chip de archivo adjunto */}
           {selectedPath && (
             <div className="flex items-center gap-1.5 mb-2 px-2.5 py-1 rounded-lg"
@@ -3372,17 +3396,6 @@ export default function App() {
                       className="hover:brightness-150 shrink-0">
                 <X size={10}/>
               </button>
-            </div>
-          )}
-
-          {/* Chip de imagen adjunta */}
-          {attachedImage && (
-            <div className="flex items-center gap-2 mb-2 px-2.5 py-1 rounded-lg"
-                 style={{ background:`${C.green}12`, border:`1px solid ${C.green}30` }}>
-              <img src={attachedImage.preview} alt="" className="w-8 h-8 rounded object-cover shrink-0"/>
-              <span className="text-[10px] flex-1" style={{ color: C.green }}>Imagen adjunta</span>
-              <button onClick={() => setAttachedImage(null)} style={{ color: C.textMuted }}
-                      className="hover:brightness-150 shrink-0"><X size={10}/></button>
             </div>
           )}
 
@@ -3403,14 +3416,6 @@ export default function App() {
             <div className="flex items-center justify-between px-2 pb-1.5">
               <div className="flex items-center gap-2">
                 <span className="text-[9px]" style={{ color: C.textMuted }}>↵ enviar · Shift+↵ línea</span>
-                <button onClick={() => imageInputRef.current?.click()}
-                        title="Adjuntar imagen (Gemini/Claude)"
-                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] transition-all hover:brightness-110"
-                        style={{ background: attachedImage ? `${C.green}20` : C.bgCard2,
-                                 color: attachedImage ? C.green : C.textMuted,
-                                 border:`1px solid ${attachedImage ? C.green+"40" : C.border}` }}>
-                  <ImageIcon size={9}/> Imagen
-                </button>
               </div>
               <button onClick={() => sendChat()}
                       disabled={chatLoading || !chatInput.trim()}
