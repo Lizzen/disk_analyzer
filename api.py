@@ -60,12 +60,14 @@ _VALID_PROVIDERS = {"gemini", "groq", "claude", "ollama"}
 
 
 class ChatRequest(BaseModel):
-    message:       str        = Field(..., min_length=1, max_length=8000)
-    provider:      str        = Field("gemini", pattern=r"^(gemini|groq|claude|ollama)$")
-    selected_path: str        = Field("", max_length=1000)
-    history:       list[dict] = Field(default_factory=list, max_length=40)
-    temperature:   float      = Field(0.7, ge=0.0, le=2.0)
-    max_tokens:    int        = Field(1024, ge=10, le=8192)
+    message:       str           = Field(..., min_length=1, max_length=8000)
+    provider:      str           = Field("gemini", pattern=r"^(gemini|groq|claude|ollama)$")
+    selected_path: str           = Field("", max_length=1000)
+    history:       list[dict]    = Field(default_factory=list, max_length=40)
+    temperature:   float         = Field(0.7, ge=0.0, le=2.0)
+    max_tokens:    int           = Field(1024, ge=10, le=8192)
+    image_b64:     Optional[str] = Field(None, max_length=5_000_000)  # ~3.7 MB imagen
+    image_mime:    Optional[str] = Field(None, pattern=r"^image/(png|jpeg|webp)$")
 
 
 class ConfigRequest(BaseModel):
@@ -268,6 +270,13 @@ async def flush_queue_to_ws(q: queue.Queue, websocket: WebSocket, cancel_event: 
                             files_sent += len(batch_entries)
                             # Store raw dicts — avoids 100k Pydantic object constructions
                             last_scan_result.files.extend(batch_entries)
+                        elif t == "heavy_folder":
+                            last_scan_result.heavy_folders.append({
+                                "path":   m.get("path", ""),
+                                "name":   m.get("name", ""),
+                                "parent": m.get("parent", ""),
+                                "size":   m.get("size", 0),
+                            })
                         elif t == "done":
                             last_scan_result.total_bytes = m.get("total_bytes", 0)
                             last_scan_result.elapsed     = m.get("elapsed", 0.0)
@@ -338,11 +347,30 @@ async def chat(req: ChatRequest):
             yield "data: [DONE]\n\n"
         return StreamingResponse(_unavail(), media_type="text/event-stream")
 
+    # Validar imagen si se adjunta
+    image_b64  = None
+    image_mime = None
+    if req.image_b64 and req.image_mime:
+        import base64 as _b64
+        try:
+            decoded = _b64.b64decode(req.image_b64, validate=True)
+            if len(decoded) > 5 * 1024 * 1024:
+                async def _img_too_large():
+                    yield f"data: {json.dumps({'error': 'La imagen supera los 5 MB permitidos.'})}\n\n"
+                    yield "data: [DONE]\n\n"
+                return StreamingResponse(_img_too_large(), media_type="text/event-stream")
+            image_b64  = req.image_b64
+            image_mime = req.image_mime
+        except Exception:
+            pass  # imagen inválida — ignorar silenciosamente
+
     messages = build_messages(
         history=req.history,
         user_input=req.message,
         scan=last_scan_result,
         selected_path=req.selected_path,
+        image_b64=image_b64,
+        image_mime=image_mime,
     )
 
     # Streaming en thread aparte (los providers son síncronos)
@@ -548,6 +576,340 @@ def get_disk_info(path: str = "C:/"):
     except Exception as e:
         log.warning("disk_info error for path %s: %s", norm, e)
         return {"error": "No se pudo obtener información del disco"}
+
+
+# ── Exportación ────────────────────────────────────────────────────────────────
+
+class ExportRequest(BaseModel):
+    format: str  = Field("csv", pattern=r"^(csv|json|html)$")
+    limit:  int  = Field(1000, ge=1, le=100000)
+
+
+def _fmt_size_py(b: int) -> str:
+    """Formatea bytes a string legible (igual que fmtSize en frontend)."""
+    if b is None: return "—"
+    for unit, thresh in [("GB", 1024**3), ("MB", 1024**2), ("KB", 1024)]:
+        if b >= thresh:
+            return f"{b/thresh:.1f} {unit}"
+    return f"{b} B"
+
+
+@app.post("/api/export")
+def export_scan(req: ExportRequest):
+    """
+    Exporta los archivos del último escaneo en CSV, JSON o HTML.
+    Solo incluye campos primitivos seguros.
+    """
+    import io, csv, html as _html
+    from datetime import datetime
+
+    if last_scan_result is None or not last_scan_result.files:
+        return Response(status_code=204)
+
+    def _get(f, key, default=""):
+        return f[key] if isinstance(f, dict) else getattr(f, key, default)
+
+    files = sorted(last_scan_result.files, key=lambda f: _get(f, "size", 0), reverse=True)[:req.limit]
+    rows = [
+        {
+            "name":      _get(f, "name"),
+            "size":      _get(f, "size", 0),
+            "category":  _get(f, "category"),
+            "extension": _get(f, "extension"),
+            "is_cache":  _get(f, "is_cache", False),
+            "path":      _get(f, "path"),
+            "mtime":     _get(f, "mtime", 0),
+            "atime":     _get(f, "atime", 0),
+        }
+        for f in files
+    ]
+
+    if req.format == "json":
+        body = json.dumps({"scan_root": last_scan_result.root_path,
+                           "exported_at": datetime.utcnow().isoformat(),
+                           "total_files": len(rows),
+                           "files": rows}, ensure_ascii=False)
+        return Response(content=body, media_type="application/json",
+                        headers={"Content-Disposition": 'attachment; filename="scan_export.json"'})
+
+    if req.format == "html":
+        # ── Resumen por categoría ──────────────────────────────────────────────
+        cat_totals: dict[str, int] = {}
+        total_bytes = last_scan_result.total_bytes or 1
+        for r in rows:
+            cat_totals[r["category"]] = cat_totals.get(r["category"], 0) + r["size"]
+        cat_sorted = sorted(cat_totals.items(), key=lambda x: x[1], reverse=True)
+
+        # ── Top carpetas ───────────────────────────────────────────────────────
+        top_folders = sorted(last_scan_result.folders.values(),
+                             key=lambda n: n.size, reverse=True)[:20]
+
+        now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+        root_esc = _html.escape(last_scan_result.root_path)
+
+        def row_html(r: dict, idx: int) -> str:
+            bg = "#13131e" if idx % 2 == 0 else "#0a0a12"
+            cache_tag = ' <span style="color:#f59e0b;font-size:10px">[cache]</span>' if r["is_cache"] else ""
+            name_esc = _html.escape(str(r["name"]))
+            path_esc = _html.escape(str(r["path"]))
+            cat_esc  = _html.escape(str(r["category"]))
+            ext_esc  = _html.escape(str(r["extension"]) or "—")
+            size_str = _fmt_size_py(r["size"])
+            pct      = r["size"] / total_bytes * 100
+            bar_w    = min(pct * 8, 120)  # max 120px
+            return (
+                f'<tr style="background:{bg}">'
+                f'<td style="color:#a0a0c0">{_html.escape(str(idx+1))}</td>'
+                f'<td>{name_esc}{cache_tag}</td>'
+                f'<td style="text-align:right;color:#6366f1;font-family:monospace">{size_str}'
+                f'<div style="width:{bar_w:.0f}px;height:3px;background:#6366f1;border-radius:2px;margin-top:2px;float:right"></div></td>'
+                f'<td style="color:#94a3b8">{cat_esc}</td>'
+                f'<td style="color:#64748b;font-family:monospace;font-size:11px">{ext_esc}</td>'
+                f'<td style="color:#475569;font-family:monospace;font-size:10px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{path_esc}</td>'
+                f'</tr>'
+            )
+
+        folder_rows = ""
+        max_f = top_folders[0].size if top_folders else 1
+        for i, fn in enumerate(top_folders):
+            bg = "#13131e" if i % 2 == 0 else "#0a0a12"
+            pct = fn.size / total_bytes * 100
+            bar_w = fn.size / max_f * 200
+            folder_rows += (
+                f'<tr style="background:{bg}">'
+                f'<td style="color:#a0a0c0">{i+1}</td>'
+                f'<td style="font-family:monospace;font-size:11px">{_html.escape(fn.path)}</td>'
+                f'<td style="text-align:right;color:#6366f1;font-family:monospace">{_fmt_size_py(fn.size)}'
+                f'<div style="width:{bar_w:.0f}px;height:3px;background:#6366f1;border-radius:2px;margin-top:2px;float:right"></div></td>'
+                f'<td style="color:#94a3b8">{pct:.1f}%</td>'
+                f'<td style="color:#64748b">{fn.file_count:,}</td>'
+                f'</tr>'
+            )
+
+        cat_rows = ""
+        for cat, sz in cat_sorted:
+            pct = sz / total_bytes * 100
+            cat_rows += (
+                f'<tr>'
+                f'<td>{_html.escape(cat)}</td>'
+                f'<td style="text-align:right;font-family:monospace;color:#6366f1">{_fmt_size_py(sz)}</td>'
+                f'<td><div style="width:{pct*3:.0f}px;height:10px;background:#6366f1;border-radius:3px;min-width:2px"></div></td>'
+                f'<td style="color:#94a3b8">{pct:.1f}%</td>'
+                f'</tr>'
+            )
+
+        file_rows = "".join(row_html(r, i) for i, r in enumerate(rows))
+
+        html_body = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Disk Analyzer — {root_esc}</title>
+<style>
+  body{{margin:0;padding:24px;background:#0a0a0f;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px}}
+  h1{{color:#a5b4fc;margin:0 0 4px}}
+  h2{{color:#6366f1;font-size:14px;margin:28px 0 10px;border-bottom:1px solid #1e1e2e;padding-bottom:6px}}
+  .meta{{color:#64748b;font-size:11px;margin-bottom:20px}}
+  table{{border-collapse:collapse;width:100%;margin-bottom:8px}}
+  th{{background:#0f0f1a;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.08em;padding:6px 10px;text-align:left;position:sticky;top:0}}
+  td{{padding:5px 10px;vertical-align:middle}}
+  tr:hover td{{background:#1a1a2e!important}}
+  .badge{{display:inline-block;padding:1px 6px;border-radius:9px;font-size:10px;font-weight:600}}
+</style>
+</head>
+<body>
+<h1>📊 Disk Analyzer Report</h1>
+<div class="meta">
+  Ruta: <strong style="color:#c4b5fd">{root_esc}</strong> &nbsp;·&nbsp;
+  {len(last_scan_result.files):,} archivos &nbsp;·&nbsp;
+  {_fmt_size_py(last_scan_result.total_bytes)} totales &nbsp;·&nbsp;
+  Generado: {now_str}
+</div>
+
+<h2>📂 Top carpetas por tamaño</h2>
+<table>
+<thead><tr><th>#</th><th>Ruta</th><th style="text-align:right">Tamaño</th><th>%</th><th>Archivos</th></tr></thead>
+<tbody>{folder_rows}</tbody>
+</table>
+
+<h2>🗂 Distribución por categoría</h2>
+<table>
+<thead><tr><th>Categoría</th><th style="text-align:right">Tamaño</th><th>Gráfico</th><th>%</th></tr></thead>
+<tbody>{cat_rows}</tbody>
+</table>
+
+<h2>📄 Top {len(rows)} archivos por tamaño</h2>
+<table>
+<thead><tr><th>#</th><th>Nombre</th><th style="text-align:right">Tamaño</th><th>Categoría</th><th>Ext.</th><th>Ruta</th></tr></thead>
+<tbody>{file_rows}</tbody>
+</table>
+</body>
+</html>"""
+        return Response(content=html_body.encode("utf-8"),
+                        media_type="text/html",
+                        headers={"Content-Disposition": 'attachment; filename="disk_report.html"'})
+
+    # CSV
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=["name","size","category","extension","is_cache","path","mtime","atime"])
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(content=buf.getvalue().encode("utf-8-sig"),
+                    media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="scan_export.csv"'})
+
+
+# ── Detección de riesgos ──────────────────────────────────────────────────────
+
+@app.get("/api/risks")
+def get_risks():
+    """Analiza el último escaneo y devuelve alertas de riesgo proactivas."""
+    if last_scan_result is None or not last_scan_result.files:
+        return {"alerts": []}
+    from core.risk_detector import detect_risks
+    alerts = detect_risks(last_scan_result)
+    return {"alerts": alerts}
+
+
+# ── Limpiador de temporales ────────────────────────────────────────────────────
+
+def _get_temp_roots() -> list[tuple[str, str]]:
+    """Devuelve lista de (label, path) para carpetas de archivos temporales."""
+    roots = []
+    localappdata = os.environ.get("LOCALAPPDATA", "")
+    appdata      = os.environ.get("APPDATA", "")
+
+    # %TEMP% / %TMP%
+    seen = set()
+    for var in ("TEMP", "TMP"):
+        p = os.environ.get(var, "")
+        if p and os.path.isdir(p) and p not in seen:
+            roots.append(("Windows Temp (%TEMP%)", p))
+            seen.add(p)
+
+    # AppData\Local\Temp (puede diferir de %TEMP%)
+    if localappdata:
+        p = os.path.join(localappdata, "Temp")
+        if os.path.isdir(p) and p not in seen:
+            roots.append(("AppData Local Temp", p))
+            seen.add(p)
+
+    # Cachés de navegadores
+    browser_paths = []
+    if localappdata:
+        browser_paths += [
+            ("Chrome Cache",     os.path.join(localappdata, "Google", "Chrome", "User Data", "Default", "Cache")),
+            ("Chrome GPU Cache", os.path.join(localappdata, "Google", "Chrome", "User Data", "Default", "GPUCache")),
+            ("Chrome Code Cache",os.path.join(localappdata, "Google", "Chrome", "User Data", "Default", "Code Cache")),
+            ("Edge Cache",       os.path.join(localappdata, "Microsoft", "Edge", "User Data", "Default", "Cache")),
+            ("Edge GPU Cache",   os.path.join(localappdata, "Microsoft", "Edge", "User Data", "Default", "GPUCache")),
+        ]
+    if appdata:
+        # Firefox: perfiles en %APPDATA%\Mozilla\Firefox\Profiles\*\cache2
+        ff_profiles = os.path.join(appdata, "Mozilla", "Firefox", "Profiles")
+        if os.path.isdir(ff_profiles):
+            try:
+                for entry in os.scandir(ff_profiles):
+                    if entry.is_dir(follow_symlinks=False):
+                        c = os.path.join(entry.path, "cache2")
+                        if os.path.isdir(c):
+                            browser_paths.append((f"Firefox Cache ({entry.name[:12]})", c))
+            except OSError:
+                pass
+
+    for label, p in browser_paths:
+        if os.path.isdir(p) and p not in seen:
+            roots.append((label, p))
+            seen.add(p)
+
+    # Thumbnails de Windows
+    if localappdata:
+        p = os.path.join(localappdata, "Microsoft", "Windows", "Explorer")
+        if os.path.isdir(p) and p not in seen:
+            roots.append(("Windows Thumbnails", p))
+            seen.add(p)
+
+    return roots
+
+
+def _scan_temp_dir(label: str, path: str, max_files: int = 3000) -> dict:
+    """Escanea un directorio temporal de forma superficial (2 niveles)."""
+    files = []
+    total = 0
+    try:
+        stack = [(path, 0)]
+        while stack and len(files) < max_files:
+            dirpath, depth = stack.pop()
+            try:
+                with os.scandir(dirpath) as it:
+                    for e in it:
+                        if len(files) >= max_files:
+                            break
+                        try:
+                            if e.is_dir(follow_symlinks=False) and depth < 2:
+                                stack.append((e.path, depth + 1))
+                            elif e.is_file(follow_symlinks=False):
+                                st = e.stat(follow_symlinks=False)
+                                files.append({"path": e.path, "name": e.name, "size": st.st_size})
+                                total += st.st_size
+                        except OSError:
+                            pass
+            except OSError:
+                pass
+    except OSError:
+        pass
+    files.sort(key=lambda f: f["size"], reverse=True)
+    return {"label": label, "path": path, "files": files[:500], "total_size": total, "total_files": len(files)}
+
+
+@app.get("/api/temp-files")
+def get_temp_files():
+    """Detecta y lista archivos temporales del sistema."""
+    roots = _get_temp_roots()
+    groups = [_scan_temp_dir(label, path) for label, path in roots]
+    groups = [g for g in groups if g["total_files"] > 0]
+    grand_total = sum(g["total_size"] for g in groups)
+    return {"groups": groups, "grand_total": grand_total}
+
+
+class TempCleanRequest(BaseModel):
+    paths: list[str] = Field(..., max_length=5000)
+    mode:  str       = Field("trash", pattern=r"^(trash|permanent)$")
+
+
+@app.post("/api/temp-clean")
+def clean_temp_files(req: TempCleanRequest):
+    """Elimina los archivos temporales indicados (papelera o permanente)."""
+    from core.trash import send_to_recycle_bin, delete_permanently
+
+    temp_roots = {os.path.normpath(p) for _, p in _get_temp_roots()}
+
+    deleted = []
+    errors  = []
+    for raw_path in req.paths[:5000]:
+        ok, norm = _validate_file_path(raw_path)
+        if not ok:
+            errors.append({"path": raw_path, "error": norm})
+            continue
+        # Validar que la ruta pertenece a una raíz temporal conocida
+        norm_lower = norm.lower()
+        in_temp = any(norm_lower.startswith(r.lower()) for r in temp_roots)
+        if not in_temp:
+            errors.append({"path": norm, "error": "Ruta no pertenece a un directorio temporal conocido"})
+            continue
+        try:
+            if req.mode == "trash":
+                ok2, err = send_to_recycle_bin(norm)
+            else:
+                ok2, err = delete_permanently(norm)
+            if ok2:
+                deleted.append(norm)
+            else:
+                errors.append({"path": norm, "error": err})
+        except Exception as e:
+            errors.append({"path": norm, "error": str(e)})
+
+    return {"deleted": deleted, "errors": errors}
 
 
 # ── Frontend estático (dist/) ──────────────────────────────────────────────────

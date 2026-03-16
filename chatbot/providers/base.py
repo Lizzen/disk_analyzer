@@ -10,8 +10,8 @@ from typing import Callable
 
 @dataclass
 class Message:
-    role: str   # "user" | "assistant" | "system"
-    content: str
+    role: str           # "user" | "assistant" | "system"
+    content: object     # str (texto puro) | list[dict] (multipart: text + image)
 
 
 @dataclass

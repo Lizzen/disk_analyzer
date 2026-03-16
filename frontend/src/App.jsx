@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import {
   Play, Square, FolderOpen, HardDrive, Search,
   MessageSquare, X, Send, Bot, User, Loader2,
@@ -6,11 +6,23 @@ import {
   ChevronUp, ChevronDown, ChevronsUpDown,
   FileText, Film, Image, Music, Archive, Database, Code, Clock,
   AlertTriangle, BarChart2,
-  Key, Cpu, Sliders, Palette, Eye, EyeOff, RefreshCw, Save, Zap
+  Key, Cpu, Sliders, Palette, Eye, EyeOff, RefreshCw, Save, Zap,
+  Trash2, ExternalLink, PlayCircle, Clipboard, ScanLine, History,
+  LayoutGrid, CalendarDays, Download, Table2,
+  Star, GitCompare, Bell, BookOpen, Plus, Minus, ArrowRight, Image as ImageIcon
 } from "lucide-react";
 
 const API = "http://127.0.0.1:8000";
 const APP_VERSION = import.meta.env?.VITE_APP_VERSION ?? "0.3.0";
+
+// ── Constantes de chat ─────────────────────────────────────────────────────────
+const CHAT_HISTORY_KEY  = "da-chat-history-v1";
+const CHAT_MAX_PERSIST  = 60;
+const FAVORITES_KEY     = "da-favorites-v1";    // rutas favoritas
+const SCAN_HISTORY_KEY  = "da-scan-history-v1"; // historial de escaneos
+const SCAN_HISTORY_MAX  = 10;                   // máximo de escaneos guardados
+// Regexp para detectar rutas Windows absolutas en texto del asistente
+const WIN_PATH_RE = /[A-Za-z]:\\(?:[^\s<>"'|?*\n\\]+\\)*[^\s<>"'|?*\n\\]*/g;
 
 // ── Themes ────────────────────────────────────────────────────────────────────
 const THEMES = {
@@ -230,7 +242,7 @@ const THEMES = {
   },
 };
 
-const _savedTheme = localStorage.getItem("da-theme") || "logo-neon";
+const _savedTheme = localStorage.getItem("da-theme") || "dark-void";
 
 // Colores fijos de categoría — independientes del tema
 const CAT_COLORS = {
@@ -528,6 +540,57 @@ function TypingDots() {
 }
 
 
+// ── ChatActionBar: botones de acción para rutas detectadas en respuestas ───────
+// Extrae rutas Windows del texto del asistente y ofrece acciones rápidas sobre ellas.
+const ChatActionBar = memo(function ChatActionBar({ text, C, onAttach, onOpenExplorer }) {
+  const paths = useMemo(() => {
+    const found = [];
+    let m;
+    const re = new RegExp(WIN_PATH_RE.source, "g"); // nueva instancia para resetear lastIndex
+    while ((m = re.exec(text)) !== null && found.length < 5) {
+      if (!found.includes(m[0])) found.push(m[0]);
+    }
+    return found;
+  }, [text]);
+
+  if (paths.length === 0) return null;
+
+  return (
+    <div className="mt-1.5 space-y-1">
+      {paths.map(path => {
+        const name = path.split(/[\\/]/).pop() || path;
+        return (
+          <div key={path} className="flex items-center gap-1 flex-wrap">
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded truncate max-w-[140px]"
+                  style={{ background: C.bgInput, color: C.textMuted, border:`1px solid ${C.border}` }}
+                  title={path}>
+              {name}
+            </span>
+            <button onClick={() => onOpenExplorer(path)}
+                    title="Abrir en Explorador"
+                    className="flex items-center gap-1 text-[9px] px-2 py-0.5 rounded transition-all hover:brightness-125"
+                    style={{ background:`${C.accent}18`, color: C.accentL, border:`1px solid ${C.accent}30` }}>
+              <ExternalLink size={9}/> Abrir
+            </button>
+            <button onClick={() => onAttach(path)}
+                    title="Adjuntar al chat"
+                    className="flex items-center gap-1 text-[9px] px-2 py-0.5 rounded transition-all hover:brightness-125"
+                    style={{ background:`${C.purple}18`, color: C.purple, border:`1px solid ${C.purple}30` }}>
+              <Clipboard size={9}/> Adjuntar
+            </button>
+            <button onClick={() => navigator.clipboard?.writeText(path)}
+                    title="Copiar ruta"
+                    className="flex items-center gap-1 text-[9px] px-2 py-0.5 rounded transition-all hover:brightness-125"
+                    style={{ background:`${C.cyan}18`, color: C.cyan, border:`1px solid ${C.cyan}30` }}>
+              <Clipboard size={9}/> Copiar
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
 // Fila virtualizada de la tabla de archivos (memoizada para evitar re-renders)
 const FileRow = memo(({ index, style, data }) => {
   const { files, selectedPath, setSelectedPath, setCtxMenu, C } = data;
@@ -633,6 +696,767 @@ function FileTableVirtual({ files, selectedPath, setSelectedPath, setCtxMenu, C 
   );
 }
 
+// ── Helpers de fecha ──────────────────────────────────────────────────────────
+const NOW_MS = Date.now();
+function mtimeBucket(mtime) {
+  if (!mtime) return "Sin fecha";
+  const diff = NOW_MS / 1000 - mtime;
+  if (diff <  7 * 86400) return "Última semana";
+  if (diff < 30 * 86400) return "Último mes";
+  if (diff < 365 * 86400) return "Último año";
+  if (diff < 3 * 365 * 86400) return "1–3 años";
+  return "Más de 3 años";
+}
+const TIMELINE_ORDER = ["Última semana","Último mes","Último año","1–3 años","Más de 3 años","Sin fecha"];
+
+// ── Treemap ────────────────────────────────────────────────────────────────────
+// Algoritmo squarify para layout de treemap
+function squarify(items, x, y, w, h) {
+  if (!items.length) return [];
+  const total = items.reduce((s, i) => s + i.value, 0);
+  if (total === 0 || w <= 0 || h <= 0) return [];
+
+  const result = [];
+  let remaining = [...items];
+  let rx = x, ry = y, rw = w, rh = h;
+
+  while (remaining.length) {
+    const isWide = rw >= rh;
+    const strip = [];
+    let stripVal = 0;
+    const side = isWide ? rh : rw;
+
+    for (const item of remaining) {
+      const testVal = stripVal + item.value;
+      const testRatio = () => {
+        const sz = (testVal / total) * (isWide ? rw : rh);
+        const a = side * side * item.value / (testVal * testVal);
+        const b = testVal * testVal / (side * side * item.value);
+        return Math.max(a, b);
+      };
+      if (!strip.length || testRatio() < (() => {
+        const sz = (stripVal / total) * (isWide ? rw : rh);
+        const last = strip[strip.length - 1];
+        const a = side * side * last.value / (stripVal * stripVal);
+        const b = stripVal * stripVal / (side * side * last.value);
+        return Math.max(a, b);
+      })()) {
+        strip.push(item);
+        stripVal += item.value;
+      } else break;
+    }
+
+    remaining = remaining.slice(strip.length);
+    const stripPct = stripVal / total;
+    const stripW = isWide ? rw * stripPct : rw;
+    const stripH = isWide ? rh : rh * stripPct;
+    let sx = rx, sy = ry;
+
+    for (const item of strip) {
+      const pct = item.value / stripVal;
+      const iw = isWide ? stripW : stripW * pct;
+      const ih = isWide ? stripH * pct : stripH;
+      result.push({ ...item, x: sx, y: sy, w: iw, h: ih });
+      if (isWide) sy += ih; else sx += iw;
+    }
+
+    if (isWide) { rx += stripW; rw -= stripW; }
+    else        { ry += stripH; rh -= stripH; }
+  }
+  return result;
+}
+
+const Treemap = memo(function Treemap({ folders, C, onSelect }) {
+  const containerRef = useRef(null);
+  const [dims, setDims] = useState({ w: 0, h: 0 });
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setDims({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    setDims({ w: el.clientWidth, h: el.clientHeight });
+    return () => ro.disconnect();
+  }, []);
+
+  const cells = useMemo(() => {
+    if (!dims.w || !dims.h || !folders.length) return [];
+    const top20 = folders.slice(0, 40).map(f => ({
+      label: f.path.split(/[\\/]/).pop() || f.path,
+      path:  f.path,
+      value: f.size,
+    }));
+    return squarify(top20, 0, 0, dims.w, dims.h);
+  }, [folders, dims]);
+
+  return (
+    <div ref={containerRef} className="w-full h-full relative overflow-hidden"
+         style={{ background: C.bgDark }}>
+      {cells.map((cell, i) => {
+        const color = Object.values(CAT_COLORS)[i % Object.values(CAT_COLORS).length];
+        const tooSmall = cell.w < 40 || cell.h < 24;
+        return (
+          <div key={cell.path}
+               onClick={() => onSelect?.(cell.path)}
+               title={`${cell.label}\n${fmtSize(cell.value)}`}
+               className="absolute border cursor-pointer transition-all hover:brightness-125 hover:z-10"
+               style={{
+                 left: cell.x, top: cell.y, width: cell.w, height: cell.h,
+                 background: `${color}22`,
+                 borderColor: `${color}44`,
+                 overflow: "hidden",
+               }}>
+            {!tooSmall && (
+              <div className="p-1.5 h-full flex flex-col justify-between">
+                <span className="text-[10px] font-semibold leading-tight truncate"
+                      style={{ color }}>
+                  {cell.label}
+                </span>
+                <span className="text-[9px] font-mono" style={{ color: C.textMuted }}>
+                  {fmtSize(cell.value)}
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {cells.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <p className="text-xs" style={{ color: C.textMuted }}>Escanea una carpeta para ver el Treemap</p>
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ── Timeline ───────────────────────────────────────────────────────────────────
+const Timeline = memo(function Timeline({ files, C }) {
+  const buckets = useMemo(() => {
+    const map = {};
+    for (const f of files) {
+      const b = mtimeBucket(f.mtime);
+      if (!map[b]) map[b] = { count: 0, bytes: 0, files: [] };
+      map[b].count++;
+      map[b].bytes += f.size;
+      if (map[b].files.length < 5) map[b].files.push(f);
+    }
+    const totalBytes = Object.values(map).reduce((s, b) => s + b.bytes, 0);
+    return TIMELINE_ORDER
+      .filter(k => map[k])
+      .map(k => ({ label: k, ...map[k], pct: totalBytes > 0 ? map[k].bytes / totalBytes * 100 : 0 }));
+  }, [files]);
+
+  if (!buckets.length) return (
+    <div className="flex items-center justify-center h-full">
+      <p className="text-xs" style={{ color: C.textMuted }}>Escanea una carpeta para ver la línea de tiempo</p>
+    </div>
+  );
+
+  const BUCKET_COLORS = {
+    "Última semana": "#10b981", "Último mes": "#3b82f6",
+    "Último año":    "#a855f7", "1–3 años":   "#f59e0b",
+    "Más de 3 años": "#f43f5e", "Sin fecha":  "#6b7280",
+  };
+
+  return (
+    <div className="h-full overflow-y-auto px-4 py-4 space-y-4">
+      {buckets.map(b => {
+        const clr = BUCKET_COLORS[b.label] || C.accentL;
+        return (
+          <div key={b.label} className="rounded-xl overflow-hidden"
+               style={{ background: C.bgCard, border:`1px solid ${C.border}` }}>
+            {/* Header */}
+            <div className="flex items-center gap-3 px-4 py-2.5"
+                 style={{ background: C.bgCard2, borderBottom:`1px solid ${C.border}` }}>
+              <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: clr }}/>
+              <span className="text-xs font-bold" style={{ color: C.textPri }}>{b.label}</span>
+              <span className="text-[10px] ml-auto font-mono" style={{ color: C.textMuted }}>
+                {fmtNum(b.count)} archivos · {fmtSize(b.bytes)}
+              </span>
+              <span className="text-[10px] font-bold" style={{ color: clr }}>
+                {b.pct.toFixed(1)}%
+              </span>
+            </div>
+            {/* Barra */}
+            <div className="px-4 pt-2 pb-1">
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: C.bgDark }}>
+                <div className="h-full rounded-full transition-all duration-500"
+                     style={{ width:`${b.pct}%`, background: clr }}/>
+              </div>
+            </div>
+            {/* Top archivos */}
+            <div className="px-4 pb-3 pt-1 space-y-1">
+              {b.files.map(f => (
+                <div key={f.path} className="flex items-center gap-2 text-[10px]">
+                  <span className="truncate flex-1" style={{ color: C.textSec }}>{f.name}</span>
+                  <span className="font-mono shrink-0" style={{ color: clr }}>{fmtSize(f.size)}</span>
+                </div>
+              ))}
+              {b.count > 5 && (
+                <p className="text-[9px]" style={{ color: C.textMuted }}>… y {fmtNum(b.count - 5)} más</p>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
+// ── HorizontalBarChart ────────────────────────────────────────────────────────
+
+const BAR_PALETTE = [
+  "#6366f1","#22d3ee","#10b981","#f59e0b","#f43f5e",
+  "#8b5cf6","#3b82f6","#ec4899","#14b8a6","#84cc16",
+];
+
+const HorizontalBarChart = memo(function HorizontalBarChart({ folders, C, topN = 25 }) {
+  const top = useMemo(() =>
+    [...folders].sort((a,b) => b.size - a.size).slice(0, topN),
+  [folders, topN]);
+
+  if (!top.length) return (
+    <div className="flex-1 flex items-center justify-center" style={{ color: C.textMuted }}>
+      <p className="text-sm">Escanea una carpeta para ver el gráfico</p>
+    </div>
+  );
+
+  const maxSize = top[0].size || 1;
+
+  return (
+    <div className="flex-1 overflow-y-auto px-6 py-4"
+         style={{ scrollbarWidth:"thin", scrollbarColor:`${C.border} transparent` }}>
+      <p className="text-[10px] font-bold tracking-widest mb-4" style={{ color: C.textMuted }}>
+        TOP {top.length} CARPETAS POR TAMAÑO
+      </p>
+      <div className="space-y-2">
+        {top.map((f, i) => {
+          const pct  = f.size / maxSize * 100;
+          const clr  = BAR_PALETTE[i % BAR_PALETTE.length];
+          const name = f.path.split(/[\\/]/).filter(Boolean).pop() || f.path;
+          return (
+            <div key={f.path} className="group">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-[11px] font-bold shrink-0 w-5 text-right"
+                        style={{ color: C.textMuted }}>{i+1}</span>
+                  <span className="text-[11px] truncate" style={{ color: C.textPri }}
+                        title={f.path}>{name}</span>
+                </div>
+                <div className="flex items-center gap-3 shrink-0 ml-3">
+                  <span className="text-[11px] font-mono" style={{ color: clr }}>{fmtSize(f.size)}</span>
+                  <span className="text-[10px]" style={{ color: C.textMuted }}>{fmtNum(f.file_count)} arch.</span>
+                </div>
+              </div>
+              <div className="h-5 rounded overflow-hidden flex"
+                   style={{ background: C.bgCard }}>
+                <div className="h-full rounded transition-all duration-700 flex items-center px-2"
+                     style={{ width:`${pct}%`, background:`${clr}cc`, minWidth: 4 }}>
+                  {pct > 15 && (
+                    <span className="text-[9px] font-bold text-white truncate">{(pct).toFixed(1)}%</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
+// ── TempCleanerModal ───────────────────────────────────────────────────────────
+
+const TempCleanerModal = React.memo(function TempCleanerModal({ onClose, C }) {
+  const [loading, setLoading]     = useState(true);
+  const [groups,  setGroups]      = useState([]);
+  const [grandTotal, setGrandTotal] = useState(0);
+  const [selected, setSelected]   = useState(new Set());
+  const [cleaning, setCleaning]   = useState(false);
+  const [done,     setDone]       = useState(null); // { deleted, errors }
+
+  useEffect(() => {
+    fetch(`${API}/api/temp-files`)
+      .then(r => r.json())
+      .then(d => { setGroups(d.groups || []); setGrandTotal(d.grand_total || 0); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const toggleFile = (path) => setSelected(prev => {
+    const n = new Set(prev);
+    n.has(path) ? n.delete(path) : n.add(path);
+    return n;
+  });
+
+  const toggleGroup = (group) => {
+    const allPaths = group.files.map(f => f.path);
+    const allSelected = allPaths.every(p => selected.has(p));
+    setSelected(prev => {
+      const n = new Set(prev);
+      allPaths.forEach(p => allSelected ? n.delete(p) : n.add(p));
+      return n;
+    });
+  };
+
+  const selectAll = () => {
+    const all = groups.flatMap(g => g.files.map(f => f.path));
+    setSelected(new Set(all));
+  };
+
+  const selectedSize = useMemo(() => {
+    let total = 0;
+    for (const g of groups) for (const f of g.files) if (selected.has(f.path)) total += f.size;
+    return total;
+  }, [selected, groups]);
+
+  const clean = async (mode) => {
+    if (!selected.size) return;
+    setCleaning(true);
+    try {
+      const r = await fetch(`${API}/api/temp-clean`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ paths: [...selected], mode }),
+      });
+      const d = await r.json();
+      setDone(d);
+      // Actualizar grupos eliminando los borrados
+      const deletedSet = new Set(d.deleted || []);
+      setGroups(prev => prev.map(g => ({
+        ...g,
+        files: g.files.filter(f => !deletedSet.has(f.path)),
+        total_size: g.files.filter(f => !deletedSet.has(f.path)).reduce((s,f) => s+f.size, 0),
+      })).filter(g => g.files.length > 0));
+      setSelected(new Set());
+    } catch {}
+    finally { setCleaning(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center z-50"
+         style={{ background:"rgba(0,0,0,0.8)" }}
+         onClick={e => e.target === e.currentTarget && !cleaning && onClose()}>
+      <div className="rounded-xl overflow-hidden flex flex-col shadow-2xl"
+           style={{ background: C.bgCard, border:`1px solid ${C.border}`, width: 680, maxHeight:"80vh" }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b shrink-0"
+             style={{ background: C.bgSurface, borderColor: C.border }}>
+          <span className="text-sm font-semibold flex items-center gap-2" style={{ color: C.textPri }}>
+            <Trash2 size={14} style={{ color: C.amber }}/> Limpiador de temporales
+          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px]" style={{ color: C.textMuted }}>
+              Total detectado: <span style={{ color: C.amber }}>{fmtSize(grandTotal)}</span>
+            </span>
+            <button onClick={onClose} disabled={cleaning}
+                    style={{ color: C.textMuted }} className="hover:text-white"><X size={15}/></button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {loading && (
+            <div className="flex items-center justify-center py-12 gap-3" style={{ color: C.textMuted }}>
+              <Loader2 size={18} className="animate-spin"/> Analizando temporales…
+            </div>
+          )}
+          {!loading && groups.length === 0 && (
+            <div className="text-center py-12" style={{ color: C.green }}>
+              <CheckCircle2 size={32} className="mx-auto mb-2"/>
+              <p className="text-sm font-semibold">No se encontraron archivos temporales</p>
+            </div>
+          )}
+          {groups.map(group => {
+            const allSelected = group.files.length > 0 && group.files.every(f => selected.has(f.path));
+            return (
+              <div key={group.path} className="rounded-xl overflow-hidden"
+                   style={{ border:`1px solid ${C.border}` }}>
+                {/* Group header */}
+                <div className="flex items-center gap-3 px-3 py-2 cursor-pointer"
+                     style={{ background: C.bgCard2 }}
+                     onClick={() => toggleGroup(group)}>
+                  <input type="checkbox" checked={allSelected} onChange={() => toggleGroup(group)}
+                         className="shrink-0" onClick={e => e.stopPropagation()}/>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold" style={{ color: C.textPri }}>{group.label}</p>
+                    <p className="text-[10px] truncate font-mono" style={{ color: C.textMuted }}>{group.path}</p>
+                  </div>
+                  <span className="text-xs font-bold shrink-0" style={{ color: C.amber }}>
+                    {fmtSize(group.total_size)}
+                  </span>
+                  <span className="text-[10px] shrink-0" style={{ color: C.textMuted }}>
+                    {fmtNum(group.total_files)} archivos
+                  </span>
+                </div>
+                {/* File list (top 20) */}
+                <div className="divide-y" style={{ borderColor: `${C.border}44` }}>
+                  {group.files.slice(0, 20).map(f => (
+                    <div key={f.path}
+                         className="flex items-center gap-2.5 px-3 py-1.5 cursor-pointer"
+                         style={{ background: selected.has(f.path) ? `${C.amber}08` : "transparent" }}
+                         onMouseEnter={e => e.currentTarget.style.background = selected.has(f.path) ? `${C.amber}12` : C.bgHover}
+                         onMouseLeave={e => e.currentTarget.style.background = selected.has(f.path) ? `${C.amber}08` : "transparent"}
+                         onClick={() => toggleFile(f.path)}>
+                      <input type="checkbox" checked={selected.has(f.path)} onChange={() => toggleFile(f.path)}
+                             className="shrink-0" onClick={e => e.stopPropagation()}/>
+                      <span className="flex-1 text-[11px] truncate font-mono" style={{ color: C.textSec }}>{f.name}</span>
+                      <span className="text-[10px] font-mono shrink-0" style={{ color: C.amber }}>{fmtSize(f.size)}</span>
+                    </div>
+                  ))}
+                  {group.files.length > 20 && (
+                    <div className="px-3 py-1 text-[10px]" style={{ color: C.textMuted }}>
+                      … y {fmtNum(group.files.length - 20)} archivos más
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {done && (
+            <div className="rounded-xl p-3" style={{ background:`${C.green}10`, border:`1px solid ${C.green}30` }}>
+              <p className="text-xs font-semibold" style={{ color: C.green }}>
+                ✓ {done.deleted?.length || 0} archivos eliminados
+                {done.errors?.length > 0 && <span style={{ color: C.amber }}> · {done.errors.length} errores</span>}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center gap-3 px-4 py-3 border-t shrink-0"
+             style={{ borderColor: C.border, background: C.bgSurface }}>
+          <button onClick={selectAll} className="text-[10px] hover:brightness-125"
+                  style={{ color: C.textMuted }}>Seleccionar todo</button>
+          <div className="flex-1"/>
+          {selected.size > 0 && (
+            <span className="text-[11px]" style={{ color: C.textPri }}>
+              {selected.size} seleccionados · <span style={{ color: C.amber }}>{fmtSize(selectedSize)}</span>
+            </span>
+          )}
+          <button onClick={() => clean("trash")}
+                  disabled={!selected.size || cleaning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:brightness-110 disabled:opacity-40"
+                  style={{ background:`${C.amber}20`, color: C.amber, border:`1px solid ${C.amber}40` }}>
+            {cleaning ? <Loader2 size={11} className="animate-spin"/> : <Trash2 size={11}/>}
+            Papelera
+          </button>
+          <button onClick={() => clean("permanent")}
+                  disabled={!selected.size || cleaning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:brightness-110 disabled:opacity-40"
+                  style={{ background:`${C.red}20`, color: C.red, border:`1px solid ${C.red}40` }}>
+            {cleaning ? <Loader2 size={11} className="animate-spin"/> : <X size={11}/>}
+            Eliminar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// ── RiskAlertsPanel ───────────────────────────────────────────────────────────
+
+const RISK_ICONS = { high: "🔴", medium: "🟠", low: "🟡" };
+const RISK_COLORS = { high: "red", medium: "amber", low: "green" };
+
+const RiskAlertsPanel = React.memo(function RiskAlertsPanel({ alerts, onClose, onOpenExplorer, onAttach, C }) {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center z-50"
+         style={{ background:"rgba(0,0,0,0.75)" }}
+         onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="rounded-xl overflow-hidden flex flex-col shadow-2xl"
+           style={{ background: C.bgCard, border:`2px solid ${C.red}44`, width: 580, maxHeight:"75vh" }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b shrink-0"
+             style={{ background: C.bgSurface, borderColor: C.border }}>
+          <span className="text-sm font-semibold flex items-center gap-2" style={{ color: C.textPri }}>
+            <Bell size={14} style={{ color: C.red }}/> Alertas de riesgo detectadas
+          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold"
+                  style={{ background:`${C.red}20`, color: C.red }}>
+              {alerts.filter(a => a.severity === "high").length} críticas
+            </span>
+            <button onClick={onClose} style={{ color: C.textMuted }} className="hover:text-white"><X size={15}/></button>
+          </div>
+        </div>
+        {/* Alerts list */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {alerts.map((alert, i) => {
+            const colorKey = RISK_COLORS[alert.severity] || "amber";
+            const clr = C[colorKey] || C.amber;
+            return (
+              <div key={i} className="rounded-xl overflow-hidden"
+                   style={{ border:`1px solid ${clr}44` }}>
+                {/* Alert header */}
+                <div className="flex items-start gap-3 px-3 py-2.5"
+                     style={{ background:`${clr}10` }}>
+                  <span className="text-lg shrink-0 mt-0.5">{RISK_ICONS[alert.severity]}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold" style={{ color: clr }}>{alert.title}</p>
+                    <p className="text-[10px] mt-0.5 leading-relaxed" style={{ color: C.textSec }}>
+                      {alert.description}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold shrink-0" style={{ color: clr }}>
+                    {alert.size > 0 ? fmtSize(alert.size) : ""}
+                  </span>
+                </div>
+                {/* Path + actions */}
+                {alert.path && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 border-t"
+                       style={{ borderColor:`${clr}22`, background: C.bgCard2 }}>
+                    <span className="flex-1 text-[10px] font-mono truncate"
+                          style={{ color: C.textMuted }}>{alert.path}</span>
+                    {alert.action === "open" && (
+                      <button onClick={() => onOpenExplorer(alert.path)}
+                              className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] transition-all hover:brightness-110 shrink-0"
+                              style={{ background:`${C.cyan}18`, color: C.cyan, border:`1px solid ${C.cyan}30` }}>
+                        <ExternalLink size={9}/> Abrir
+                      </button>
+                    )}
+                    <button onClick={() => onAttach(alert.path)}
+                            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] transition-all hover:brightness-110 shrink-0"
+                            style={{ background:`${C.accent}18`, color: C.accentL, border:`1px solid ${C.accent}30` }}>
+                      <MessageSquare size={9}/> Preguntar IA
+                    </button>
+                  </div>
+                )}
+                {/* File list (top 5) */}
+                {alert.files?.length > 0 && (
+                  <div className="px-3 pb-2 pt-1 space-y-0.5">
+                    {alert.files.slice(0,5).map((p, j) => (
+                      <p key={j} className="text-[9px] font-mono truncate"
+                         style={{ color: C.textMuted }}>{p}</p>
+                    ))}
+                    {alert.files.length > 5 && (
+                      <p className="text-[9px]" style={{ color: C.textMuted }}>… y {alert.files.length - 5} más</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex justify-end px-4 py-3 border-t shrink-0" style={{ borderColor: C.border }}>
+          <button onClick={onClose} className="px-4 py-1.5 rounded text-xs"
+                  style={{ background: C.bgCard2, color: C.textSec, border:`1px solid ${C.border}` }}>
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// ── Toast notification system ─────────────────────────────────────────────────
+
+let _toastId = 0;
+const _toastListeners = new Set();
+function _emitToast(toast) { _toastListeners.forEach(fn => fn(toast)); }
+
+function useToast() {
+  return {
+    show: (msg, type = "info", duration = 3500) => {
+      _emitToast({ id: ++_toastId, msg, type, duration });
+    },
+  };
+}
+
+const ToastContainer = React.memo(function ToastContainer({ C }) {
+  const [toasts, setToasts] = useState([]);
+
+  useEffect(() => {
+    const handler = (toast) => {
+      setToasts(prev => [...prev.slice(-4), toast]);
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== toast.id)), toast.duration);
+    };
+    _toastListeners.add(handler);
+    return () => _toastListeners.delete(handler);
+  }, []);
+
+  if (!toasts.length) return null;
+
+  const TYPE_STYLE = {
+    info:    { bg: C.bgCard2,        border: C.border,  color: C.textPri,  icon: "ℹ" },
+    success: { bg: `${C.green}18`,   border: C.green,   color: C.green,    icon: "✓" },
+    warning: { bg: `${C.amber}18`,   border: C.amber,   color: C.amber,    icon: "⚠" },
+    error:   { bg: `${C.red}18`,     border: C.red,     color: C.red,      icon: "✗" },
+  };
+
+  return (
+    <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none"
+         style={{ maxWidth: 320 }}>
+      {toasts.map(t => {
+        const s = TYPE_STYLE[t.type] || TYPE_STYLE.info;
+        return (
+          <div key={t.id}
+               className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl shadow-2xl pointer-events-auto"
+               style={{ background: s.bg, border: `1px solid ${s.border}44`, color: s.color,
+                        animation: "toastIn 0.2s ease-out" }}>
+            <span className="text-sm shrink-0 mt-0.5">{s.icon}</span>
+            <span className="text-[11px] leading-relaxed flex-1">{t.msg}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
+// ── FolderCompareModal ─────────────────────────────────────────────────────────
+
+const FolderCompareModal = React.memo(function FolderCompareModal({ folders, onClose, C }) {
+  const [pathA, setPathA] = useState("");
+  const [pathB, setPathB] = useState("");
+
+  const folderList = useMemo(() =>
+    Object.values(folders || {}).sort((a, b) => b.size - a.size).slice(0, 300),
+  [folders]);
+
+  const nodeA = folders[pathA];
+  const nodeB = folders[pathB];
+
+  const diff = useMemo(() => {
+    if (!nodeA || !nodeB) return null;
+    const delta = nodeA.size - nodeB.size;
+    const bigger = delta > 0 ? pathA : pathB;
+    return { delta: Math.abs(delta), bigger, pct: nodeB.size > 0 ? Math.abs(delta) / Math.max(nodeA.size, nodeB.size) * 100 : 0 };
+  }, [nodeA, nodeB, pathA, pathB]);
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center z-50"
+         style={{ background:"rgba(0,0,0,0.75)" }}
+         onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="rounded-xl overflow-hidden flex flex-col shadow-2xl"
+           style={{ background: C.bgCard, border:`1px solid ${C.border}`, width: 560 }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b"
+             style={{ background: C.bgSurface, borderColor: C.border }}>
+          <span className="text-sm font-semibold flex items-center gap-2" style={{ color: C.textPri }}>
+            <GitCompare size={14} style={{ color: C.accent }}/> Comparar carpetas
+          </span>
+          <button onClick={onClose} style={{ color: C.textMuted }} className="hover:text-white"><X size={15}/></button>
+        </div>
+        {/* Selectors */}
+        <div className="p-4 grid grid-cols-2 gap-4">
+          {[["A", pathA, setPathA], ["B", pathB, setPathB]].map(([label, val, setter]) => (
+            <div key={label}>
+              <p className="text-[10px] font-bold mb-1.5" style={{ color: C.textMuted }}>CARPETA {label}</p>
+              <select value={val} onChange={e => setter(e.target.value)}
+                      className="w-full text-[11px] px-2 py-1.5 rounded-lg outline-none"
+                      style={{ background: C.bgInput, color: C.textPri, border:`1px solid ${C.border}` }}>
+                <option value="">— Seleccionar —</option>
+                {folderList.map(f => (
+                  <option key={f.path} value={f.path}>
+                    {f.path.split(/[\\/]/).slice(-2).join("/")}  ({fmtSize(f.size)})
+                  </option>
+                ))}
+              </select>
+              {val && folders[val] && (
+                <div className="mt-1.5 text-[10px] space-y-0.5 px-2" style={{ color: C.textSec }}>
+                  <div>Tamaño: <span className="font-bold" style={{ color: C.accentL }}>{fmtSize(folders[val].size)}</span></div>
+                  <div>Archivos: <span style={{ color: C.accentL }}>{fmtNum(folders[val].file_count)}</span></div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        {/* Result */}
+        {diff && nodeA && nodeB && (
+          <div className="mx-4 mb-4 rounded-xl p-4"
+               style={{ background: C.bgCard2, border:`1px solid ${C.border}` }}>
+            <p className="text-[10px] font-bold mb-3" style={{ color: C.textMuted }}>COMPARACIÓN</p>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              {[["A", nodeA, pathA], ["B", nodeB, pathB]].map(([l, node, p]) => (
+                <div key={l} className="rounded-lg p-3" style={{ background: C.bgCard, border:`1px solid ${C.border}` }}>
+                  <p className="text-[9px] font-bold mb-1" style={{ color: C.textMuted }}>CARPETA {l}</p>
+                  <p className="text-xs font-bold" style={{ color: diff.bigger === p ? C.amber : C.green }}>
+                    {fmtSize(node.size)}
+                  </p>
+                  <p className="text-[10px] mt-0.5" style={{ color: C.textSec }}>{fmtNum(node.file_count)} archivos</p>
+                  <p className="text-[9px] mt-1 truncate font-mono" style={{ color: C.textMuted }}>
+                    {p.split(/[\\/]/).pop()}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="text-[11px] text-center rounded-lg py-2"
+                 style={{ background:`${C.accent}12`, border:`1px solid ${C.accent}30`, color: C.textPri }}>
+              La carpeta <span style={{ color: C.amber }} className="font-bold">
+                {diff.bigger.split(/[\\/]/).pop()}
+              </span> es <span style={{ color: C.amber }} className="font-bold">{fmtSize(diff.delta)}</span> mayor
+              {" "}({diff.pct.toFixed(1)}% de diferencia)
+            </div>
+          </div>
+        )}
+        {!diff && pathA && pathB && (
+          <p className="text-center text-[11px] pb-4" style={{ color: C.textMuted }}>Selecciona dos carpetas para comparar</p>
+        )}
+        {!pathA && !pathB && (
+          <p className="text-center text-[11px] pb-4" style={{ color: C.textMuted }}>Selecciona carpetas del escaneo actual</p>
+        )}
+      </div>
+    </div>
+  );
+});
+
+// ── ScanHistoryModal ───────────────────────────────────────────────────────────
+
+const ScanHistoryModal = React.memo(function ScanHistoryModal({ history, onClose, onRescan, C }) {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center z-50"
+         style={{ background:"rgba(0,0,0,0.75)" }}
+         onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="rounded-xl overflow-hidden flex flex-col shadow-2xl"
+           style={{ background: C.bgCard, border:`1px solid ${C.border}`, width: 480, maxHeight: "60vh" }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b shrink-0"
+             style={{ background: C.bgSurface, borderColor: C.border }}>
+          <span className="text-sm font-semibold flex items-center gap-2" style={{ color: C.textPri }}>
+            <History size={14} style={{ color: C.accent }}/> Historial de escaneos
+          </span>
+          <button onClick={onClose} style={{ color: C.textMuted }} className="hover:text-white"><X size={15}/></button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {history.length === 0 ? (
+            <p className="text-center text-[11px] py-8" style={{ color: C.textMuted }}>No hay escaneos anteriores</p>
+          ) : (
+            <div className="p-2 space-y-1">
+              {history.map((item, i) => (
+                <div key={i}
+                     className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                     style={{ background: C.bgCard2, border:`1px solid ${C.border}` }}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                       style={{ background:`${C.accent}20` }}>
+                    <HardDrive size={13} style={{ color: C.accentL }}/>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-mono truncate" style={{ color: C.textPri }}>{item.path}</p>
+                    <p className="text-[10px] mt-0.5" style={{ color: C.textMuted }}>
+                      {item.files?.toLocaleString("es-ES") || "—"} archivos · {fmtSize(item.bytes || 0)}
+                      {" · "}{new Date(item.ts).toLocaleDateString("es-ES", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" })}
+                    </p>
+                  </div>
+                  <button onClick={() => { onRescan(item.path); onClose(); }}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] shrink-0 transition-all hover:brightness-110"
+                          style={{ background:`${C.accent}20`, color: C.accentL, border:`1px solid ${C.accent}40` }}>
+                    <Play size={9} fill="currentColor"/> Re-escanear
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end px-4 py-3 border-t shrink-0" style={{ borderColor: C.border }}>
+          <button onClick={onClose} className="px-4 py-1.5 rounded text-xs"
+                  style={{ background: C.bgCard2, color: C.textSec, border:`1px solid ${C.border}` }}>
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 // ── Componente principal ───────────────────────────────────────────────────────
 
 export default function App() {
@@ -682,6 +1506,51 @@ export default function App() {
   const [duplicates, setDuplicates]     = useState([]);
   const [showDups, setShowDups]         = useState(false);
 
+  // ── Vista activa ──────────────────────────────────────────────────────────────
+  const [viewMode, setViewMode] = useState("table"); // "table" | "treemap" | "timeline"
+
+  // ── Toast ─────────────────────────────────────────────────────────────────────
+  const toast = useToast();
+
+  // ── Alertas de riesgo ────────────────────────────────────────────────────────
+  const [riskAlerts, setRiskAlerts]     = useState([]);
+  const [showRiskPanel, setShowRiskPanel] = useState(false);
+
+  // ── Imagen adjunta al chat ────────────────────────────────────────────────────
+  const [attachedImage, setAttachedImage] = useState(null); // {b64, mime, preview}
+  const imageInputRef = useRef(null);
+
+  // ── Favoritos ─────────────────────────────────────────────────────────────────
+  const [favorites, setFavorites] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]"); } catch { return []; }
+  });
+  const [showFavMenu, setShowFavMenu] = useState(false);
+  const toggleFavorite = (path) => {
+    setFavorites(prev => {
+      const next = prev.includes(path) ? prev.filter(p => p !== path) : [...prev, path];
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  // ── Historial de escaneos ─────────────────────────────────────────────────────
+  const [scanHistory, setScanHistory] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(SCAN_HISTORY_KEY) || "[]"); } catch { return []; }
+  });
+  const [showHistory, setShowHistory] = useState(false);
+
+  // ── Comparador de carpetas ────────────────────────────────────────────────────
+  const [showCompare, setShowCompare] = useState(false);
+
+  // ── Limpiador de temporales ───────────────────────────────────────────────────
+  const [showTempCleaner, setShowTempCleaner] = useState(false);
+
+  // ── Carpetas pesadas conocidas ────────────────────────────────────────────────
+  const [heavyFolders, setHeavyFolders] = useState([]);
+
+  // ── Filtro por fecha de último acceso ─────────────────────────────────────────
+  const [atimeFilter, setAtimeFilter] = useState(0); // 0 = sin filtro, valor en segundos
+
   // ── Menú contextual de la tabla ───────────────────────────────────────────────
   const [ctxMenu, setCtxMenu] = useState(null); // { x, y, file } | null
   // { file, mode: "trash"|"permanent" } | null
@@ -691,11 +1560,30 @@ export default function App() {
   // ── Chat ──────────────────────────────────────────────────────────────────────
   const [provider, setProvider]         = useState("gemini");
   const [chatInput, setChatInput]       = useState("");
-  const [chatHistory, setChatHistory]   = useState([]);
+  // Historial inicializado desde localStorage (memoria persistente entre sesiones).
+  // Sanitiza los datos cargados: solo acepta campos primitivos conocidos.
+  const [chatHistory, setChatHistory]   = useState(() => {
+    try {
+      const saved = localStorage.getItem(CHAT_HISTORY_KEY);
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter(m => m && typeof m.role === "string" && typeof m.content === "string")
+        .map(({ role, content, provider: p }) => ({
+          role, content,
+          ...(p && typeof p === "string" ? { provider: p } : {}),
+        }));
+    } catch {
+      return [];
+    }
+  });
   const [chatLoading, setChatLoading]   = useState(false);
   const [chatError, setChatError]       = useState("");
   const [selectedPath, setSelectedPath] = useState("");
   const chatBottomRef = useRef(null);
+  // Modo agente: indica que la IA ha solicitado un escaneo automático
+  const [agentMode, setAgentMode]       = useState(false);
 
   // ── Config ────────────────────────────────────────────────────────────────────
   const [showSettings, setShowSettings]   = useState(false);
@@ -810,6 +1698,7 @@ export default function App() {
       setScanning(true); setProgress(0);
       setAllFiles([]); setFolders({});
       setSummary(null); setShowSummary(false); setDuplicates([]);
+      setHeavyFolders([]);
       setStatusDot("scanning");
       setStatusMsg(`Escaneando…  ${m.root || targetPath}`);
       setStatusStats("");
@@ -826,6 +1715,12 @@ export default function App() {
       // Acumular en ref sin disparar re-render por cada lote
       for (let i = 0; i < m.entries.length; i++) allFilesRef.current.push(m.entries[i]);
       scheduleFlush();
+    } else if (t === "heavy_folder") {
+      setHeavyFolders(prev => {
+        // Evitar duplicados por path
+        if (prev.some(h => h.path === m.path)) return prev;
+        return [...prev, { path: m.path, name: m.name, parent: m.parent, size: m.size }];
+      });
     } else if (t === "progress") {
       const pct = m.total > 0 ? Math.round(m.done / m.total * 100) : 0;
       setProgress(pct);
@@ -848,16 +1743,46 @@ export default function App() {
           : `✓ Completado en ${m.elapsed?.toFixed(1)}s`
       );
       setStatusStats("");
+      // Guardar en historial de escaneos (con resumen de carpetas y categorías)
+      setScanHistory(prev => {
+        const catTotals = {};
+        for (const f of allFilesRef.current) {
+          catTotals[f.category] = (catTotals[f.category] || 0) + f.size;
+        }
+        const entry = {
+          path:       targetPath,
+          ts:         Date.now(),
+          files:      allFilesRef.current.length,
+          bytes:      m.total_bytes || 0,
+          categories: catTotals,
+          topFolders: Object.values(foldersRef.current)
+            .sort((a,b) => b.size - a.size).slice(0, 50)
+            .map(f => ({ path: f.path, name: f.name || f.path.split(/[\\/]/).pop(), size: f.size, file_count: f.file_count })),
+        };
+        const next = [entry, ...prev.filter(e => e.path !== targetPath)].slice(0, SCAN_HISTORY_MAX);
+        localStorage.setItem(SCAN_HISTORY_KEY, JSON.stringify(next));
+        return next;
+      });
+      // Toast de finalización
+      if (hasErrors) {
+        _emitToast({ id: ++_toastId, msg: `Escaneo completado con ${m.errors} error(es) de acceso`, type: "warning", duration: 4000 });
+      } else {
+        _emitToast({ id: ++_toastId, msg: `✓ Escaneo completado en ${m.elapsed?.toFixed(1)}s`, type: "success", duration: 3500 });
+      }
     }
   };
 
-  const startScan = () => {
+  const startScan = useCallback((overridePath) => {
+    const path = overridePath || targetPath;
     if (scanning) return;
-    fetchDiskInfo(targetPath);
-    const send = () => ws.current?.send(JSON.stringify({ action:"start", path: targetPath }));
+    fetchDiskInfo(path);
+    const send = () => ws.current?.send(JSON.stringify({ action:"start", path }));
     if (ws.current?.readyState === WebSocket.OPEN) send();
     else { connectWs(); setTimeout(send, 400); }
-  };
+  }, [scanning, targetPath]);
+
+  // Mantener ref de startScan para modo agente (evitar closure stale en sendChat)
+  useEffect(() => { startScanRef.current = startScan; }, [startScan]);
 
   const cancelScan = () => {
     ws.current?.send(JSON.stringify({ action:"cancel" }));
@@ -926,6 +1851,10 @@ export default function App() {
         if (sizeFilter > 0 && f.size < sizeFilter) return false;
         if (nameFilterDeferred && !f.name.toLowerCase().includes(nameFilterDeferred.toLowerCase())) return false;
         if (selectedFolder && !f.path.startsWith(selectedFolder)) return false;
+        if (atimeFilter > 0) {
+          const atime = f.atime || 0;
+          if (atime > 0 && atime > (Date.now()/1000 - atimeFilter)) return false;
+        }
         return true;
       })
       .sort((a, b) => {
@@ -934,7 +1863,7 @@ export default function App() {
         const cmp = typeof va === "number" ? va - vb : String(va).localeCompare(String(vb));
         return sortAsc ? cmp : -cmp;
       });
-  }, [allFiles, scanning, activeCategory, sizeFilter, nameFilterDeferred, selectedFolder, sortCol, sortAsc]);
+  }, [allFiles, scanning, activeCategory, sizeFilter, nameFilterDeferred, selectedFolder, sortCol, sortAsc, atimeFilter]);
 
   const sortedFolders = useMemo(() =>
     Object.values(folders || {}).sort((a, b) => b.size - a.size),
@@ -980,6 +1909,28 @@ export default function App() {
   useEffect(() => { selectedPathRef.current = selectedPath; }, [selectedPath]);
   useEffect(() => { chatInputRef.current    = chatInput;    }, [chatInput]);
 
+  // ── Persistencia del historial en localStorage ─────────────────────────────
+  // Sanitiza los mensajes antes de serializar: solo extrae campos primitivos
+  // conocidos para evitar referencias circulares (elementos DOM, fibers de React, etc.)
+  useEffect(() => {
+    if (chatHistory.length === 0) {
+      localStorage.removeItem(CHAT_HISTORY_KEY);
+      return;
+    }
+    try {
+      const sanitized = chatHistory
+        .slice(-CHAT_MAX_PERSIST)
+        .map(({ role, content, provider: p }) => ({
+          role:     String(role    ?? ""),
+          content:  String(content ?? ""),
+          ...(p ? { provider: String(p) } : {}),
+        }));
+      localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(sanitized));
+    } catch {
+      // Si localStorage está lleno o hay un error inesperado, omitir silenciosamente
+    }
+  }, [chatHistory]);
+
   // Refs para parámetros LLM (evitar closure stale)
   const temperatureRef = useRef(temperature);
   const maxTokensRef   = useRef(maxTokens);
@@ -993,27 +1944,54 @@ export default function App() {
         ...prev,
         { role:"system", content:`✓ Escaneo completado — ${allFiles.length.toLocaleString("es-ES")} archivos indexados. Puedes preguntarme sobre ellos.` }
       ]);
+      // Detectar riesgos automáticamente al terminar
+      fetch(`${API}/api/risks`)
+        .then(r => r.json())
+        .then(d => {
+          if (d.alerts?.length > 0) {
+            setRiskAlerts(d.alerts);
+            const highs = d.alerts.filter(a => a.severity === "high").length;
+            _emitToast({
+              id: ++_toastId,
+              msg: highs > 0
+                ? `⚠ ${highs} riesgo(s) crítico(s) detectado(s) — pulsa 🔔 para ver`
+                : `${d.alerts.length} alerta(s) de riesgo detectada(s)`,
+              type: highs > 0 ? "warning" : "info",
+              duration: 5000,
+            });
+          } else {
+            setRiskAlerts([]);
+          }
+        })
+        .catch(() => {});
     }
   }, [progress]);
+
+  // Ref para acceder a startScan desde sendChat sin closure stale
+  const startScanRef = useRef(null);
 
   const sendChat = useCallback(async (text) => {
     const msg = (text ?? chatInputRef.current).trim();
     if (!msg || chatLoadingRef.current) return;
     chatLoadingRef.current = true;
-    setChatInput(""); setChatError("");
-    setChatHistory(prev => [...prev, { role:"user", content:msg }, { role:"assistant", content:"" }]);
+    // Capturar imagen antes de limpiar el estado
+    const imgSnapshot = attachedImage;
+    setChatInput(""); setChatError(""); setAttachedImage(null);
+    setChatHistory(prev => [...prev, { role:"user", content:msg }, { role:"assistant", content:"", provider: providerRef.current }]);
     setChatLoading(true);
     try {
+      const body = {
+        message:       msg,
+        provider:      providerRef.current,
+        selected_path: selectedPathRef.current,
+        history:       chatHistoryRef.current.filter(m => m.role !== "system").slice(-20),
+        temperature:   temperatureRef.current,
+        max_tokens:    maxTokensRef.current,
+      };
+      if (imgSnapshot) { body.image_b64 = imgSnapshot.b64; body.image_mime = imgSnapshot.mime; }
       const res = await fetch(`${API}/api/chat`, {
         method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          message:       msg,
-          provider:      providerRef.current,
-          selected_path: selectedPathRef.current,
-          history:       chatHistoryRef.current.filter(m => m.role !== "system").slice(-20),
-          temperature:   temperatureRef.current,
-          max_tokens:    maxTokensRef.current,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const reader = res.body.getReader();
@@ -1021,10 +1999,12 @@ export default function App() {
       let buf = "";
       let pendingChunk = "";
       let flushId = null;
+      let fullResponse = "";
       const flushChunk = () => {
         flushId = null;
         if (!pendingChunk) return;
         const toFlush = pendingChunk;
+        fullResponse += toFlush;
         pendingChunk = "";
         setChatHistory(prev => {
           const c = [...prev];
@@ -1040,7 +2020,7 @@ export default function App() {
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           const raw = line.slice(6).trim();
-          if (raw === "[DONE]") { flushChunk(); return; }
+          if (raw === "[DONE]") { flushChunk(); break; }
           try {
             const item = JSON.parse(raw);
             if (item.error) {
@@ -1056,6 +2036,27 @@ export default function App() {
         }
       }
       if (flushId) { clearTimeout(flushId); flushChunk(); }
+
+      // ── Modo agente: detectar instrucción [SCAN:<ruta>] en la respuesta ──────
+      // El LLM puede incluir [SCAN:C:\Users\...] para solicitar un escaneo automático.
+      const agentMatch = fullResponse.match(/\[SCAN:([A-Za-z]:[^\]]+)\]/);
+      if (agentMatch) {
+        const scanPath = agentMatch[1].trim();
+        setAgentMode(true);
+        setChatHistory(prev => [
+          ...prev,
+          { role:"system", content:`🤖 Modo agente — iniciando escaneo de ${scanPath}…` },
+        ]);
+        // Pequeño delay para que el mensaje sea visible antes del scan
+        setTimeout(() => {
+          if (startScanRef.current) {
+            setTargetPath(scanPath);
+            // startScan usa targetPath via closure; necesitamos dispararlo después del setState
+            setTimeout(() => startScanRef.current?.(), 100);
+          }
+          setAgentMode(false);
+        }, 600);
+      }
     } catch (e) {
       setChatHistory(prev => { const c=[...prev]; c[c.length-1]={ role:"assistant", content:`⚠️ ${e.message}` }; return c; });
       setChatError(e.message);
@@ -1111,18 +2112,92 @@ export default function App() {
                    placeholder="C:/" />
           </div>
 
-          {/* Botones */}
-          {!scanning ? (
-            <button onClick={startScan}
-                    className="flex items-center gap-2 px-4 py-1.5 rounded text-sm font-semibold shrink-0 transition-all duration-150 hover:brightness-110 active:scale-95"
-                    style={{ background: C.accent, color:"white" }}>
-              <Play size={13} fill="currentColor" /> Escanear
+          {/* Favoritos */}
+          <div className="relative shrink-0">
+            <button onClick={() => setShowFavMenu(v => !v)} title="Rutas favoritas"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-all hover:brightness-110"
+                    style={{ background: favorites.length > 0 ? `${C.amber}18` : C.bgCard,
+                             color: favorites.length > 0 ? C.amber : C.textMuted,
+                             border:`1px solid ${favorites.length > 0 ? C.amber+"44" : C.border}` }}>
+              <Star size={12} fill={favorites.length > 0 ? "currentColor" : "none"}/> {favorites.length > 0 && favorites.length}
             </button>
-          ) : (
-            <button onClick={cancelScan}
-                    className="flex items-center gap-2 px-4 py-1.5 rounded text-sm font-semibold shrink-0 transition-all duration-150 hover:brightness-110 active:scale-95"
-                    style={{ background: C.bgCard2, color: C.red, border:`1px solid ${C.border}` }}>
-              <Square size={13} fill="currentColor" /> Cancelar
+            {showFavMenu && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setShowFavMenu(false)}/>
+                <div className="absolute left-0 top-full mt-1 rounded-xl overflow-hidden shadow-2xl z-40 min-w-[240px]"
+                     style={{ background: C.bgCard2, border:`1px solid ${C.border}` }}>
+                  <div className="px-3 py-2 border-b text-[10px] font-bold tracking-widest flex items-center justify-between"
+                       style={{ borderColor: C.border, color: C.textMuted }}>
+                    <span className="flex items-center gap-1.5"><Star size={9}/> FAVORITOS</span>
+                    {favorites.length === 0 && <span>vacío</span>}
+                  </div>
+                  {favorites.length === 0 ? (
+                    <p className="text-center text-[10px] py-4" style={{ color: C.textMuted }}>
+                      Añade rutas pulsando ★ en el árbol
+                    </p>
+                  ) : (
+                    <div className="py-1 max-h-48 overflow-y-auto">
+                      {favorites.map(path => (
+                        <div key={path}
+                             className="flex items-center gap-2 px-3 py-1.5 group"
+                             onMouseEnter={e => e.currentTarget.style.background = C.bgHover}
+                             onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                          <button className="flex-1 text-left text-[11px] truncate"
+                                  style={{ color: C.textPri }}
+                                  onClick={() => { setTargetPath(path); setShowFavMenu(false); }}>
+                            {path}
+                          </button>
+                          <button onClick={() => toggleFavorite(path)}
+                                  className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  style={{ color: C.textMuted }}>
+                            <X size={10}/>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {targetPath && (
+                    <div className="border-t px-3 py-2" style={{ borderColor: C.border }}>
+                      <button onClick={() => { toggleFavorite(targetPath); setShowFavMenu(false);
+                                               _emitToast({ id: ++_toastId, msg: favorites.includes(targetPath) ? "Eliminado de favoritos" : `"${targetPath.split(/[\\/]/).pop()}" añadido a favoritos`, type: "success", duration: 2500 }); }}
+                              className="w-full flex items-center gap-2 text-[10px] py-1 transition-all hover:brightness-110"
+                              style={{ color: favorites.includes(targetPath) ? C.amber : C.green }}>
+                        <Star size={9} fill={favorites.includes(targetPath) ? "currentColor" : "none"}/>
+                        {favorites.includes(targetPath) ? "Quitar de favoritos" : "Añadir ruta actual"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Historial de escaneos */}
+          <button onClick={() => setShowHistory(true)} title="Historial de escaneos"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-all hover:brightness-110 shrink-0"
+                  style={{ background: scanHistory.length > 0 ? `${C.cyan}18` : C.bgCard,
+                           color: scanHistory.length > 0 ? C.cyan : C.textMuted,
+                           border:`1px solid ${scanHistory.length > 0 ? C.cyan+"44" : C.border}` }}>
+            <History size={12}/> {scanHistory.length > 0 && scanHistory.length}
+          </button>
+
+          {/* Comparador de carpetas */}
+          {Object.keys(folders).length > 1 && (
+            <button onClick={() => setShowCompare(true)} title="Comparar carpetas"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-all hover:brightness-110 shrink-0"
+                    style={{ background:`${C.purple}18`, color: C.purple, border:`1px solid ${C.purple}44` }}>
+              <GitCompare size={12}/>
+            </button>
+          )}
+
+          {/* Botón alertas de riesgo */}
+          {riskAlerts.length > 0 && (
+            <button onClick={() => setShowRiskPanel(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs shrink-0 transition-all hover:brightness-110"
+                    style={{ background:`${riskAlerts.some(a=>a.severity==="high") ? C.red : C.amber}22`,
+                             color: riskAlerts.some(a=>a.severity==="high") ? C.red : C.amber,
+                             border:`1px solid ${riskAlerts.some(a=>a.severity==="high") ? C.red : C.amber}44` }}>
+              <Bell size={12}/> {riskAlerts.length} riesgo{riskAlerts.length > 1 ? "s" : ""}
             </button>
           )}
 
@@ -1132,6 +2207,84 @@ export default function App() {
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs shrink-0 transition-all hover:brightness-110"
                     style={{ background:`${C.amber}22`, color:C.amber, border:`1px solid ${C.amber}44` }}>
               <AlertTriangle size={12} /> {duplicates.length} duplicados
+            </button>
+          )}
+
+          {/* Selector de vista */}
+          <div className="flex items-center rounded overflow-hidden shrink-0"
+               style={{ border:`1px solid ${C.border}` }}>
+            {[
+              { id:"table",    Icon: Table2,      title:"Tabla"    },
+              { id:"treemap",  Icon: LayoutGrid,  title:"Treemap"  },
+              { id:"timeline", Icon: CalendarDays,title:"Tiempo"   },
+              { id:"barchart", Icon: BarChart2,   title:"Barras"   },
+            ].map(({ id, Icon: VIcon, title }) => (
+              <button key={id} onClick={() => setViewMode(id)} title={title}
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] transition-all"
+                      style={{
+                        background: viewMode===id ? `${C.accent}30` : C.bgCard,
+                        color:      viewMode===id ? C.accentL : C.textMuted,
+                        borderRight: id!=="timeline" ? `1px solid ${C.border}` : undefined,
+                      }}>
+                <VIcon size={12}/> {title}
+              </button>
+            ))}
+          </div>
+
+          {/* Limpiador de temporales */}
+          <button onClick={() => setShowTempCleaner(true)} title="Limpiar archivos temporales"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-all hover:brightness-110 shrink-0"
+                  style={{ background:`${C.amber}18`, color: C.amber, border:`1px solid ${C.amber}44` }}>
+            <Trash2 size={12}/> Temp
+          </button>
+
+          {/* Exportar — solo cuando hay datos */}
+          {allFiles.length > 0 && (
+            <div className="relative shrink-0 group">
+              <button className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs transition-all hover:brightness-110"
+                      style={{ background:`${C.green}18`, color: C.green, border:`1px solid ${C.green}35` }}>
+                <Download size={12}/> Exportar
+              </button>
+              {/* Dropdown */}
+              <div className="absolute right-0 top-full mt-1 rounded-lg overflow-hidden shadow-xl z-30 hidden group-hover:flex flex-col"
+                   style={{ background: C.bgCard2, border:`1px solid ${C.border}`, minWidth: 130 }}>
+                {[["CSV","csv"],["JSON","json"],["HTML","html"]].map(([label, fmt]) => (
+                  <button key={fmt}
+                          onClick={async () => {
+                            const r = await fetch(`${API}/api/export`, {
+                              method:"POST", headers:{"Content-Type":"application/json"},
+                              body: JSON.stringify({ format: fmt, limit: 10000 }),
+                            });
+                            if (!r.ok) return;
+                            const blob = await r.blob();
+                            const url  = URL.createObjectURL(blob);
+                            const a    = document.createElement("a");
+                            a.href = url; a.download = `scan_export.${fmt}`; a.click();
+                            URL.revokeObjectURL(url);
+                          }}
+                          className="flex items-center gap-2 px-3 py-2 text-xs text-left transition-all hover:brightness-125"
+                          style={{ color: C.textPri }}
+                          onMouseEnter={e => e.currentTarget.style.background = C.bgHover}
+                          onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <Download size={11}/> {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Botón Escanear / Cancelar */}
+          {!scanning ? (
+            <button onClick={() => startScan()}
+                    className="flex items-center gap-2 px-4 py-1.5 rounded text-sm font-semibold shrink-0 transition-all duration-150 hover:brightness-110 active:scale-95"
+                    style={{ background: C.accent, color:"white" }}>
+              <Play size={13} fill="currentColor" /> Escanear
+            </button>
+          ) : (
+            <button onClick={cancelScan}
+                    className="flex items-center gap-2 px-4 py-1.5 rounded text-sm font-semibold shrink-0 transition-all duration-150 hover:brightness-110 active:scale-95"
+                    style={{ background: C.bgCard2, color: C.red, border:`1px solid ${C.border}` }}>
+              <Square size={13} fill="currentColor" /> Cancelar
             </button>
           )}
         </header>
@@ -1272,6 +2425,19 @@ export default function App() {
             ))}
           </select>
 
+          {/* Filtro por último acceso */}
+          <select value={atimeFilter} onChange={e => setAtimeFilter(Number(e.target.value))}
+                  title="Filtrar por último acceso (atime — puede no estar actualizado en Windows)"
+                  className="text-[11px] px-2 py-1 rounded outline-none shrink-0"
+                  style={{ background: atimeFilter > 0 ? `${C.purple}20` : C.bgCard,
+                           color: atimeFilter > 0 ? C.purple : C.textSec,
+                           border:`1px solid ${atimeFilter > 0 ? C.purple : C.border}` }}>
+            <option value={0}>Cualquier acceso</option>
+            <option value={15552000}>No accedido en 6 meses</option>
+            <option value={31536000}>No accedido en 1 año</option>
+            <option value={63072000}>No accedido en 2 años</option>
+          </select>
+
           <div className="flex-1" />
 
           {/* Búsqueda */}
@@ -1292,6 +2458,31 @@ export default function App() {
 
         {/* ── Zona de trabajo ── */}
         <div className="flex-1 flex overflow-hidden" style={{ minHeight: 0 }}>
+
+          {/* ── Treemap view ── */}
+          {viewMode === "treemap" && (
+            <div className="flex-1 overflow-hidden">
+              <Treemap folders={sortedFolders} C={C}
+                       onSelect={(path) => { setSelectedFolder(path); setViewMode("table"); }} />
+            </div>
+          )}
+
+          {/* ── Timeline view ── */}
+          {viewMode === "timeline" && (
+            <div className="flex-1 overflow-hidden">
+              <Timeline files={filteredFiles} C={C} />
+            </div>
+          )}
+
+          {/* ── Bar chart view ── */}
+          {viewMode === "barchart" && (
+            <div className="flex-1 flex overflow-hidden">
+              <HorizontalBarChart folders={sortedFolders} C={C} />
+            </div>
+          )}
+
+          {/* ── Table view (original) ── */}
+          {viewMode === "table" && <>
 
           {/* ── Tree Panel ── */}
           <div className="w-56 xl:w-64 flex flex-col shrink-0 border-r overflow-hidden"
@@ -1342,6 +2533,26 @@ export default function App() {
               })}
               {topFolders.length === 0 && !scanning && (
                 <p className="text-[11px] px-3 py-4" style={{ color: C.textMuted }}>Sin datos. Inicia un escaneo.</p>
+              )}
+
+              {/* Carpetas pesadas conocidas */}
+              {heavyFolders.length > 0 && (
+                <div className="mt-2 mx-2 rounded-lg overflow-hidden"
+                     style={{ border:`1px solid ${C.amber}44` }}>
+                  <div className="px-2 py-1.5 text-[9px] font-bold tracking-widest flex items-center gap-1.5"
+                       style={{ background:`${C.amber}12`, color: C.amber }}>
+                    <AlertTriangle size={9}/> CARPETAS PESADAS DETECTADAS
+                  </div>
+                  {heavyFolders.sort((a,b) => b.size - a.size).map(h => (
+                    <div key={h.path}
+                         className="flex items-center gap-2 px-2 py-1.5 text-[10px]"
+                         style={{ borderTop:`1px solid ${C.amber}22` }}>
+                      <span className="flex-1 truncate font-mono" style={{ color: C.textSec }}
+                            title={h.path}>{h.name}</span>
+                      <span className="shrink-0 font-bold" style={{ color: C.amber }}>{fmtSize(h.size)}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -1400,6 +2611,7 @@ export default function App() {
               {scanning && <span style={{ color: C.accent }}>escaneando…</span>}
             </div>
           </div>
+          </>}
         </div>
 
         {/* ── Status Bar ── */}
@@ -1458,8 +2670,8 @@ export default function App() {
                       style={{ background: C.bgCard2, color: C.textSec, border:`1px solid ${C.border}` }}>
                 {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
               </select>
-              {/* Botón limpiar historial */}
-              <button onClick={() => { setChatHistory([]); setChatError(""); }}
+              {/* Botón limpiar historial (también limpia localStorage) */}
+              <button onClick={() => { setChatHistory([]); setChatError(""); localStorage.removeItem(CHAT_HISTORY_KEY); }}
                       title="Limpiar historial"
                       className="p-1.5 rounded-lg transition-all hover:brightness-125"
                       style={{ color: C.textMuted, background: "transparent" }}>
@@ -1481,9 +2693,26 @@ export default function App() {
             <span className="text-[9px] font-mono truncate" style={{ color: C.textMuted }}>
               {config[`${provider==="gemini"?"GEMINI":provider==="groq"?"GROQ":provider==="claude"?"CLAUDE":"OLLAMA"}_MODEL`] || provider}
             </span>
-            <span className="ml-auto text-[9px] font-mono shrink-0" style={{ color: C.textMuted }}>
-              t={temperature.toFixed(1)} · {maxTokens}tk
-            </span>
+            <div className="flex items-center gap-1.5 ml-auto shrink-0">
+              {/* Indicador de historial persistente */}
+              {chatHistory.filter(m => m.role !== "system").length > 0 && (
+                <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded"
+                      title={`${chatHistory.filter(m=>m.role!=="system").length} mensajes guardados`}
+                      style={{ background:`${C.green}15`, color: C.green, border:`1px solid ${C.green}25` }}>
+                  <History size={8}/> {chatHistory.filter(m=>m.role!=="system").length}
+                </span>
+              )}
+              {/* Badge modo agente */}
+              {agentMode && (
+                <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded animate-pulse"
+                      style={{ background:`${C.accent}20`, color: C.accentL, border:`1px solid ${C.accent}40` }}>
+                  <ScanLine size={8}/> agente
+                </span>
+              )}
+              <span className="text-[9px] font-mono" style={{ color: C.textMuted }}>
+                t={temperature.toFixed(1)} · {maxTokens}tk
+              </span>
+            </div>
           </div>
         </div>
 
@@ -2047,6 +3276,8 @@ export default function App() {
             const msgProvider = msg.provider || provider;
             const PROV_COLORS = { gemini:"#4285f4", groq:"#f55036", claude:"#d97706", ollama:"#10b981" };
             const provClr = PROV_COLORS[msgProvider] || C.green;
+            // Limpiar instrucciones [SCAN:...] del texto visible
+            const visibleContent = msg.content?.replace(/\[SCAN:[^\]]+\]/g, "").trim();
             return (
               <div key={i} className={`flex gap-2 items-end ${isUser ? "flex-row-reverse" : "flex-row"}`}>
                 {/* Avatar */}
@@ -2069,13 +3300,27 @@ export default function App() {
                          color: C.textPri,
                          wordBreak:"break-word",
                        }}>
-                    {msg.content
-                      ? <ChatMarkdown text={msg.content} C={C} />
+                    {visibleContent
+                      ? <ChatMarkdown text={visibleContent} C={C} />
                       : <span className="flex items-center gap-2 py-0.5" style={{ color: C.textMuted }}>
                           <TypingDots />
                         </span>
                     }
                   </div>
+                  {/* Botones de acción para rutas detectadas (solo en mensajes del asistente) */}
+                  {!isUser && visibleContent && (
+                    <ChatActionBar
+                      text={visibleContent}
+                      C={C}
+                      onAttach={(path) => setSelectedPath(path)}
+                      onOpenExplorer={async (path) => {
+                        await fetch(`${API}/api/open-in-explorer`, {
+                          method:"POST", headers:{"Content-Type":"application/json"},
+                          body: JSON.stringify({ path }),
+                        });
+                      }}
+                    />
+                  )}
                   {/* Timestamp / label */}
                   <span className="text-[9px] px-1" style={{ color: C.textMuted }}>
                     {isUser ? "Tú" : (PROVIDERS.find(p=>p.id===msgProvider)?.label || msgProvider)}
@@ -2096,6 +3341,25 @@ export default function App() {
 
         {/* ── Input ── */}
         <div className="px-3 pt-2 pb-3 shrink-0 border-t" style={{ background: C.bgPanel, borderColor: C.border }}>
+          {/* Input oculto para imagen */}
+          <input ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp"
+                 style={{ display:"none" }}
+                 onChange={e => {
+                   const file = e.target.files?.[0];
+                   if (!file) return;
+                   if (file.size > 5 * 1024 * 1024) {
+                     _emitToast({ id: ++_toastId, msg: "La imagen supera los 5 MB permitidos", type:"warning", duration:3000 });
+                     return;
+                   }
+                   const reader = new FileReader();
+                   reader.onload = ev => {
+                     const dataUrl = ev.target.result;
+                     setAttachedImage({ b64: dataUrl.split(",")[1], mime: file.type, preview: URL.createObjectURL(file) });
+                   };
+                   reader.readAsDataURL(file);
+                   e.target.value = "";
+                 }} />
+
           {/* Chip de archivo adjunto */}
           {selectedPath && (
             <div className="flex items-center gap-1.5 mb-2 px-2.5 py-1 rounded-lg"
@@ -2108,6 +3372,17 @@ export default function App() {
                       className="hover:brightness-150 shrink-0">
                 <X size={10}/>
               </button>
+            </div>
+          )}
+
+          {/* Chip de imagen adjunta */}
+          {attachedImage && (
+            <div className="flex items-center gap-2 mb-2 px-2.5 py-1 rounded-lg"
+                 style={{ background:`${C.green}12`, border:`1px solid ${C.green}30` }}>
+              <img src={attachedImage.preview} alt="" className="w-8 h-8 rounded object-cover shrink-0"/>
+              <span className="text-[10px] flex-1" style={{ color: C.green }}>Imagen adjunta</span>
+              <button onClick={() => setAttachedImage(null)} style={{ color: C.textMuted }}
+                      className="hover:brightness-150 shrink-0"><X size={10}/></button>
             </div>
           )}
 
@@ -2126,7 +3401,17 @@ export default function App() {
                       style={{ color: C.textPri, caretColor: C.accent, lineHeight:"1.6" }} />
             {/* Toolbar inferior del input */}
             <div className="flex items-center justify-between px-2 pb-1.5">
-              <span className="text-[9px]" style={{ color: C.textMuted }}>↵ enviar · Shift+↵ nueva línea</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px]" style={{ color: C.textMuted }}>↵ enviar · Shift+↵ línea</span>
+                <button onClick={() => imageInputRef.current?.click()}
+                        title="Adjuntar imagen (Gemini/Claude)"
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] transition-all hover:brightness-110"
+                        style={{ background: attachedImage ? `${C.green}20` : C.bgCard2,
+                                 color: attachedImage ? C.green : C.textMuted,
+                                 border:`1px solid ${attachedImage ? C.green+"40" : C.border}` }}>
+                  <ImageIcon size={9}/> Imagen
+                </button>
+              </div>
               <button onClick={() => sendChat()}
                       disabled={chatLoading || !chatInput.trim()}
                       className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-semibold transition-all hover:brightness-110 disabled:opacity-40"
@@ -2293,6 +3578,42 @@ export default function App() {
       )}
 
       {/* ════════════════════════════════════════════════════════
+          MODALES: HISTORIAL / COMPARADOR
+      ════════════════════════════════════════════════════════ */}
+      {showTempCleaner && (
+        <TempCleanerModal onClose={() => setShowTempCleaner(false)} C={C} />
+      )}
+      {showRiskPanel && riskAlerts.length > 0 && (
+        <RiskAlertsPanel
+          alerts={riskAlerts}
+          onClose={() => setShowRiskPanel(false)}
+          onOpenExplorer={async (path) => {
+            await fetch(`${API}/api/open-in-explorer`, {
+              method:"POST", headers:{"Content-Type":"application/json"},
+              body: JSON.stringify({ path }),
+            });
+          }}
+          onAttach={(path) => { setSelectedPath(path); setShowRiskPanel(false); }}
+          C={C}
+        />
+      )}
+      {showHistory && (
+        <ScanHistoryModal
+          history={scanHistory}
+          onClose={() => setShowHistory(false)}
+          onRescan={(path) => { setTargetPath(path); setTimeout(() => startScanRef.current?.(path), 100); }}
+          C={C}
+        />
+      )}
+      {showCompare && (
+        <FolderCompareModal
+          folders={folders}
+          onClose={() => setShowCompare(false)}
+          C={C}
+        />
+      )}
+
+      {/* ════════════════════════════════════════════════════════
           MODAL DUPLICADOS
       ════════════════════════════════════════════════════════ */}
       {showDups && (
@@ -2357,6 +3678,9 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Toast notifications */}
+      <ToastContainer C={C} />
 
     </div>
   );

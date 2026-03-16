@@ -56,13 +56,27 @@ class ClaudeProvider(AIProvider):
         model = cfg.CLAUDE_MODEL
         client = anthropic.Anthropic(api_key=key)
 
+        def _to_content(content):
+            if isinstance(content, str):
+                return content
+            result = []
+            for p in content:
+                if p.get("type") == "text":
+                    result.append({"type": "text", "text": p["text"]})
+                elif p.get("type") == "image":
+                    result.append({
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": p["media_type"], "data": p["data"]},
+                    })
+            return result
+
         system = ""
         api_msgs = []
         for m in messages:
             if m.role == "system":
-                system = m.content
+                system = m.content if isinstance(m.content, str) else ""
             else:
-                api_msgs.append({"role": m.role, "content": m.content})
+                api_msgs.append({"role": m.role, "content": _to_content(m.content)})
 
         try:
             if on_chunk:

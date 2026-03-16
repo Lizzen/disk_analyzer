@@ -52,7 +52,22 @@ class GroqProvider(AIProvider):
         model = cfg.GROQ_MODEL
         client = Groq(api_key=key)
 
-        api_msgs = [{"role": m.role, "content": m.content} for m in messages]
+        def _to_content(content):
+            if isinstance(content, str):
+                return content
+            # Groq vision: formato OpenAI image_url con data URI
+            parts = []
+            for p in content:
+                if p.get("type") == "text":
+                    parts.append({"type": "text", "text": p["text"]})
+                elif p.get("type") == "image":
+                    parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{p['media_type']};base64,{p['data']}"},
+                    })
+            return parts if parts else ""
+
+        api_msgs = [{"role": m.role, "content": _to_content(m.content)} for m in messages]
 
         try:
             if on_chunk:
