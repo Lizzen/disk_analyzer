@@ -6,6 +6,26 @@ import os
 import socket
 import time
 
+
+def _ensure_admin():
+    """Re-lanza el proceso con permisos de administrador si no los tiene."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+    if ctypes.windll.shell32.IsUserAnAdmin():
+        return  # ya es admin
+    # Usar pythonw.exe para relanzar sin ventana de consola
+    exe = sys.executable
+    if exe.lower().endswith("python.exe"):
+        exe = exe[:-10] + "pythonw.exe"
+    params = " ".join(f'"{a}"' for a in sys.argv)
+    ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, None, 1)
+    if ret > 32:
+        sys.exit(0)   # proceso padre cierra; el hijo elevado continúa
+
+
+_ensure_admin()
+
 from api import app
 
 
@@ -24,7 +44,15 @@ def _wait_port(port: int, timeout: float = 10.0) -> bool:
 
 
 def start_server():
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+    import logging
+    # Silenciar todo output de uvicorn/fastapi a la consola
+    logging.getLogger("uvicorn").handlers.clear()
+    logging.getLogger("uvicorn.access").handlers.clear()
+    logging.getLogger("uvicorn.error").handlers.clear()
+    logging.getLogger("uvicorn").propagate = False
+    logging.getLogger("uvicorn.access").propagate = False
+    logging.getLogger("uvicorn.error").propagate = False
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="critical", access_log=False)
 
 
 if __name__ == '__main__':

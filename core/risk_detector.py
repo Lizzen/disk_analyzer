@@ -97,7 +97,7 @@ def detect_risks(scan: ScanResult) -> list[dict]:
             alerts.append({
                 "type":        "folder_unusually_large",
                 "severity":    "medium",
-                "title":       f"Carpeta "{node.name or name_lower}" ocupa {_fmt(node.size)}",
+                "title":       f'Carpeta "{node.name or name_lower}" ocupa {_fmt(node.size)}',
                 "description": f"La carpeta {node.path} tiene un tamaño inusualmente grande "
                                f"({_fmt(node.size)}). Puede contener cachés acumuladas o archivos olvidados.",
                 "path":        node.path,

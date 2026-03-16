@@ -912,6 +912,396 @@ def clean_temp_files(req: TempCleanRequest):
     return {"deleted": deleted, "errors": errors}
 
 
+# ── Salud del disco ────────────────────────────────────────────────────────────
+
+@app.get("/api/disk-health")
+def get_disk_health():
+    """
+    Información de discos físicos via Get-PhysicalDisk + Get-Disk + shutil.
+    No requiere permisos de administrador. Funciona con NVMe, SATA y USB.
+    Temperatura y datos SMART se intentan via StorageReliabilityCounter (requiere admin);
+    si no están disponibles se devuelve null y el frontend lo indica claramente.
+    """
+    import subprocess, json as _json, shutil
+
+    # ── 1. Get-PhysicalDisk: modelo, serial, salud, tipo ─────────────────────
+    ps1 = (
+        "$d = Get-PhysicalDisk | Select-Object DeviceId,FriendlyName,HealthStatus,"
+        "OperationalStatus,Size,MediaType,BusType,SerialNumber,FirmwareVersion; "
+        "$d | ConvertTo-Json -Compress"
+    )
+    try:
+        r1 = subprocess.run(
+            ["powershell", "-NonInteractive", "-NoProfile", "-Command", ps1],
+            capture_output=True, text=True, timeout=20, creationflags=0x08000000,
+        )
+        raw1 = _json.loads(r1.stdout.strip() or "[]")
+        if isinstance(raw1, dict):
+            raw1 = [raw1]
+    except Exception:
+        raw1 = []
+
+    # ── 2. Get-Disk: partición, estado operacional ────────────────────────────
+    ps2 = (
+        "$d = Get-Disk | Select-Object Number,HealthStatus,OperationalStatus,"
+        "PartitionStyle,IsBoot,IsSystem,LogicalSectorSize,PhysicalSectorSize; "
+        "$d | ConvertTo-Json -Compress"
+    )
+    try:
+        r2 = subprocess.run(
+            ["powershell", "-NonInteractive", "-NoProfile", "-Command", ps2],
+            capture_output=True, text=True, timeout=20, creationflags=0x08000000,
+        )
+        raw2 = _json.loads(r2.stdout.strip() or "[]")
+        if isinstance(raw2, dict):
+            raw2 = [raw2]
+        gdisk_map = {str(d.get("Number", "")): d for d in raw2}
+    except Exception:
+        gdisk_map = {}
+
+    # ── 3. StorageReliabilityCounter (temperatura, horas, ciclos) ────────────
+    # Requiere admin en muchos equipos; si falla devolvemos None para cada campo
+    ps3 = (
+        "try { "
+        "$r = Get-PhysicalDisk | Get-StorageReliabilityCounter | "
+        "Select-Object DeviceId,Temperature,PowerOnHours,StartStopCycleCount,"
+        "ReadErrorsTotal,WriteErrorsTotal,Wear; "
+        "$r | ConvertTo-Json -Compress "
+        "} catch { '[]' }"
+    )
+    try:
+        r3 = subprocess.run(
+            ["powershell", "-NonInteractive", "-NoProfile", "-Command", ps3],
+            capture_output=True, text=True, timeout=20, creationflags=0x08000000,
+        )
+        raw3 = _json.loads(r3.stdout.strip() or "[]")
+        if isinstance(raw3, dict):
+            raw3 = [raw3]
+        rel_map = {str(d.get("DeviceId", "")): d for d in raw3 if isinstance(d, dict)}
+    except Exception:
+        rel_map = {}
+
+    # ── 4. Uso de disco (shutil) por letra de unidad ─────────────────────────
+    drives = _get_system_drives()
+    usage_map: dict[str, dict] = {}
+    for drv in drives:
+        try:
+            total, used, free = shutil.disk_usage(drv + "\\")
+            usage_map[drv.upper()] = {"total": total, "used": used, "free": free,
+                                      "pct": round(used / total * 100, 1) if total else 0}
+        except Exception:
+            pass
+
+    # ── 5. Combinar todo ──────────────────────────────────────────────────────
+    health_norm = {"Healthy": "Good", "Warning": "Caution", "Unhealthy": "Bad"}
+    disks_out = []
+
+    for disk in raw1:
+        dev_id    = str(disk.get("DeviceId", ""))
+        model     = disk.get("FriendlyName") or disk.get("Model") or f"Disco {dev_id}"
+        serial    = disk.get("SerialNumber") or "—"
+        firmware  = disk.get("FirmwareVersion") or "—"
+        health_r  = disk.get("HealthStatus", "Unknown")
+        health    = health_norm.get(health_r, health_r or "Unknown")
+        op_status = disk.get("OperationalStatus", "Unknown")
+        size_b    = int(disk.get("Size") or 0)
+        media     = disk.get("MediaType", "Unspecified")
+        bus       = disk.get("BusType", "Unknown")
+
+        # Datos de Get-Disk complementarios
+        gd = gdisk_map.get(dev_id, {})
+        partition_style = gd.get("PartitionStyle", "—")
+        is_boot         = bool(gd.get("IsBoot", False))
+        sector_size     = gd.get("PhysicalSectorSize") or gd.get("LogicalSectorSize")
+
+        # Datos de StorageReliabilityCounter (pueden ser None si no hay permisos)
+        rc = rel_map.get(dev_id, {})
+        temperature     = rc.get("Temperature")       # °C o None
+        power_on_hours  = rc.get("PowerOnHours")      # horas o None
+        start_stop      = rc.get("StartStopCycleCount")
+        read_errors     = rc.get("ReadErrorsTotal")
+        write_errors    = rc.get("WriteErrorsTotal")
+        _wear_raw = rc.get("Wear")
+        # Wear=0 en NVMe/SSD casi siempre significa "dato no disponible del fabricante",
+        # no desgaste real. Solo mostrarlo si es > 0 o si es HDD (donde 0 sí puede ser válido).
+        _is_ssd = (media or "").lower() not in ("hdd", "hard disk drive", "unspecified")
+        wear_pct = None if (_wear_raw == 0 and _is_ssd) else _wear_raw
+
+        # Uso de disco: tomar la primera unidad del sistema asociada
+        disk_usage = None
+        for drv_letter, usg in usage_map.items():
+            # Aproximación: C: es la unidad de sistema → asignar al disco de boot
+            if is_boot and drv_letter == "C:":
+                disk_usage = usg
+                break
+        if disk_usage is None and usage_map:
+            disk_usage = next(iter(usage_map.values()))
+
+        disks_out.append({
+            "device_id":      dev_id,
+            "model":          model,
+            "serial":         serial,
+            "firmware":       firmware,
+            "health":         health,
+            "op_status":      op_status,
+            "size_bytes":     size_b,
+            "media_type":     media,
+            "bus_type":       bus,
+            "partition_style": partition_style,
+            "is_boot":        is_boot,
+            "sector_size":    sector_size,
+            # Datos de fiabilidad (None si no hay permisos de admin)
+            "temperature":        temperature,
+            "power_on_hours":     power_on_hours,
+            "start_stop_cycles":  start_stop,
+            "read_errors":        read_errors,
+            "write_errors":       write_errors,
+            "wear_pct":           wear_pct,
+            # Uso de espacio
+            "disk_usage":     disk_usage,
+        })
+
+    return {"disks": disks_out, "ok": True}
+
+
+# ── Información del sistema ────────────────────────────────────────────────────
+
+@app.get("/api/system-info")
+def get_system_info():
+    """CPU, RAM, GPU y equipo. CPU load/freq via psutil; resto via WMI."""
+    import subprocess, json as _json, psutil, datetime
+
+    def _ps(cmd):
+        try:
+            r = subprocess.run(
+                ["powershell", "-NonInteractive", "-NoProfile", "-Command", cmd],
+                capture_output=True, text=True, timeout=15, creationflags=0x08000000,
+            )
+            raw = r.stdout.strip()
+            if not raw:
+                return None
+            return _json.loads(raw)
+        except Exception:
+            return None
+
+    # ── CPU ──────────────────────────────────────────────────────────────────
+    cpu_wmi = _ps(
+        "Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,"
+        "NumberOfLogicalProcessors,MaxClockSpeed,CurrentClockSpeed,LoadPercentage"
+        " | ConvertTo-Json -Compress"
+    )
+    if isinstance(cpu_wmi, list):
+        cpu_wmi = cpu_wmi[0] if cpu_wmi else {}
+    cpu_wmi = cpu_wmi or {}
+
+    cpu_load   = psutil.cpu_percent(interval=0.5)
+    cpu_freq   = psutil.cpu_freq()
+    cpu_per_core = psutil.cpu_percent(interval=0.3, percpu=True)
+
+    # Temperatura CPU via MSAcpi_ThermalZoneTemperature (requiere admin)
+    cpu_temp = None
+    temp_raw = _ps(
+        "try { Get-CimInstance -Namespace root/WMI -ClassName MSAcpi_ThermalZoneTemperature"
+        " | Select-Object CurrentTemperature | ConvertTo-Json -Compress } catch { 'null' }"
+    )
+    if isinstance(temp_raw, dict):
+        temp_raw = [temp_raw]
+    if isinstance(temp_raw, list) and temp_raw:
+        # valor en décimas de Kelvin → Celsius
+        raw_val = temp_raw[0].get("CurrentTemperature")
+        if raw_val:
+            cpu_temp = round((raw_val / 10.0) - 273.15, 1)
+
+    # ── RAM ──────────────────────────────────────────────────────────────────
+    vm = psutil.virtual_memory()
+    ram_slots_raw = _ps(
+        "Get-CimInstance Win32_PhysicalMemory | Select-Object Manufacturer,"
+        "Capacity,Speed,SMBIOSMemoryType | ConvertTo-Json -Compress"
+    )
+    if isinstance(ram_slots_raw, dict):
+        ram_slots_raw = [ram_slots_raw]
+    ram_slots = []
+    for s in (ram_slots_raw or []):
+        mtype = {26: "DDR4", 34: "DDR5", 24: "DDR3", 20: "DDR2"}.get(s.get("SMBIOSMemoryType", 0), "DDR")
+        ram_slots.append({
+            "manufacturer": s.get("Manufacturer", "—"),
+            "capacity":     int(s.get("Capacity") or 0),
+            "speed_mhz":    s.get("Speed"),
+            "type":         mtype,
+        })
+
+    # ── GPU ──────────────────────────────────────────────────────────────────
+    gpu_wmi_raw = _ps(
+        "Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM,"
+        "CurrentHorizontalResolution,CurrentVerticalResolution,DriverVersion"
+        " | ConvertTo-Json -Compress"
+    )
+    if isinstance(gpu_wmi_raw, dict):
+        gpu_wmi_raw = [gpu_wmi_raw]
+
+    # GPU utilización via PerfCounters (no requiere admin)
+    gpu_util_raw = _ps(
+        "try { $e = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine"
+        " -ErrorAction Stop; $e | Select-Object Name,UtilizationPercentage"
+        " | ConvertTo-Json -Compress } catch { '[]' }"
+    )
+    if isinstance(gpu_util_raw, dict):
+        gpu_util_raw = [gpu_util_raw]
+    # Sumar utilización 3D por LUID
+    luid_3d: dict[str, int] = {}
+    for e in (gpu_util_raw or []):
+        name = e.get("Name", "")
+        if "engtype_3D" in name:
+            # extraer luid
+            parts = name.split("_luid_")
+            luid = parts[1].split("_phys_")[0] if len(parts) > 1 else "default"
+            luid_3d[luid] = luid_3d.get(luid, 0) + int(e.get("UtilizationPercentage") or 0)
+
+    # GPU temperatura via nvidia-smi (NVIDIA) o MSHybrid/HybridGraphics WMI
+    gpu_temps: list[float | None] = []
+    try:
+        import subprocess as _sp
+        r_ns = _sp.run(
+            ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5, creationflags=0x08000000,
+        )
+        if r_ns.returncode == 0:
+            for line in r_ns.stdout.strip().splitlines():
+                try:
+                    gpu_temps.append(float(line.strip()))
+                except ValueError:
+                    gpu_temps.append(None)
+    except Exception:
+        pass
+
+    # GPU memoria dedicada por LUID
+    gpu_mem_raw = _ps(
+        "try { Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory"
+        " | Select-Object Name,DedicatedUsage,SharedUsage | ConvertTo-Json -Compress"
+        " } catch { '[]' }"
+    )
+    if isinstance(gpu_mem_raw, dict):
+        gpu_mem_raw = [gpu_mem_raw]
+    luid_mem: dict[str, dict] = {}
+    for m in (gpu_mem_raw or []):
+        name = m.get("Name", "")
+        parts = name.split("luid_")
+        luid = parts[1].split("_phys_")[0] if len(parts) > 1 else "default"
+        luid_mem[luid] = {
+            "dedicated_used": int(m.get("DedicatedUsage") or 0),
+            "shared_used":    int(m.get("SharedUsage") or 0),
+        }
+
+    gpus = []
+    for idx, g in enumerate((gpu_wmi_raw or [])):
+        name = (g.get("Name") or "GPU").strip()
+        adapter_ram = int(g.get("AdapterRAM") or 0)
+        # Buscar LUID con mayor uso dedicado (heurística para asociar GPU WMI↔PerfCounter)
+        best_luid = max(luid_mem, key=lambda k: luid_mem[k]["dedicated_used"], default=None)
+        util_3d   = luid_3d.get(best_luid, 0) if best_luid else 0
+        mem_info  = luid_mem.get(best_luid, {}) if best_luid else {}
+        gpu_temp = gpu_temps[idx] if idx < len(gpu_temps) else None
+        gpus.append({
+            "name":             name,
+            "vram_bytes":       adapter_ram,
+            "resolution":       f"{g.get('CurrentHorizontalResolution')}×{g.get('CurrentVerticalResolution')}"
+                                if g.get("CurrentHorizontalResolution") else None,
+            "driver":           g.get("DriverVersion"),
+            "utilization_pct":  util_3d,
+            "vram_used_bytes":  mem_info.get("dedicated_used"),
+            "vram_shared_bytes":mem_info.get("shared_used"),
+            "temperature":      gpu_temp,
+        })
+
+    # ── Equipo ────────────────────────────────────────────────────────────────
+    sys_raw = _ps(
+        "Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model,"
+        "TotalPhysicalMemory | ConvertTo-Json -Compress"
+    )
+    bios_raw = _ps(
+        "Get-CimInstance Win32_BIOS | Select-Object SMBIOSBIOSVersion,ReleaseDate"
+        " | ConvertTo-Json -Compress"
+    )
+    os_raw = _ps(
+        "Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,"
+        "BuildNumber,LastBootUpTime | ConvertTo-Json -Compress"
+    )
+    if isinstance(sys_raw,  list): sys_raw  = sys_raw[0]  if sys_raw  else {}
+    if isinstance(bios_raw, list): bios_raw = bios_raw[0] if bios_raw else {}
+    if isinstance(os_raw,   list): os_raw   = os_raw[0]  if os_raw   else {}
+    sys_raw  = sys_raw  or {}
+    bios_raw = bios_raw or {}
+    os_raw   = os_raw   or {}
+
+    # Parsear fecha de último boot
+    uptime_sec = None
+    last_boot_str = os_raw.get("LastBootUpTime")
+    if last_boot_str:
+        try:
+            # Formato WMI: /Date(ms)/
+            import re
+            ms = re.search(r"/Date\((\d+)\)/", last_boot_str)
+            if ms:
+                boot_ts = int(ms.group(1)) / 1000
+                uptime_sec = int(time.time() - boot_ts)
+        except Exception:
+            pass
+
+    return {
+        "ok": True,
+        "machine": {
+            "manufacturer": sys_raw.get("Manufacturer", "—"),
+            "model":        sys_raw.get("Model", "—"),
+            "os":           os_raw.get("Caption", "—"),
+            "os_version":   os_raw.get("Version"),
+            "os_build":     os_raw.get("BuildNumber"),
+            "bios_version": bios_raw.get("SMBIOSBIOSVersion"),
+            "uptime_sec":   uptime_sec,
+        },
+        "cpu": {
+            "name":         (cpu_wmi.get("Name") or "—").strip(),
+            "cores":        cpu_wmi.get("NumberOfCores"),
+            "threads":      cpu_wmi.get("NumberOfLogicalProcessors"),
+            "max_mhz":      cpu_wmi.get("MaxClockSpeed"),
+            "current_mhz":  round(cpu_freq.current) if cpu_freq else cpu_wmi.get("CurrentClockSpeed"),
+            "load_pct":     cpu_load,
+            "per_core_pct": cpu_per_core,
+            "temperature":  cpu_temp,
+        },
+        "ram": {
+            "total":      vm.total,
+            "used":       vm.used,
+            "available":  vm.available,
+            "pct":        vm.percent,
+            "slots":      ram_slots,
+        },
+        "gpus": gpus,
+    }
+
+
+@app.get("/api/processes")
+def get_processes():
+    """Lista de procesos con CPU%, RAM, PID. Usando psutil."""
+    import psutil
+    procs = []
+    for p in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_info', 'status', 'username']):
+        try:
+            info = p.info
+            mem = info.get('memory_info')
+            procs.append({
+                "pid":    info['pid'],
+                "name":   info['name'] or "—",
+                "cpu":    round(info.get('cpu_percent') or 0, 1),
+                "mem":    mem.rss if mem else 0,
+                "status": info.get('status', ''),
+                "user":   info.get('username', ''),
+            })
+        except Exception:
+            pass
+    procs.sort(key=lambda x: x['mem'], reverse=True)
+    return {"ok": True, "processes": procs}
+
+
 # ── Frontend estático (dist/) ──────────────────────────────────────────────────
 _DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
 

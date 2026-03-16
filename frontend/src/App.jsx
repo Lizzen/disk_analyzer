@@ -9,7 +9,9 @@ import {
   Key, Cpu, Sliders, Palette, Eye, EyeOff, RefreshCw, Save, Zap,
   Trash2, ExternalLink, PlayCircle, Clipboard, ScanLine, History,
   LayoutGrid, CalendarDays, Download, Table2,
-  Star, GitCompare, Bell, BookOpen, Plus, Minus, ArrowRight
+  Star, GitCompare, Bell, BookOpen, Plus, Minus, ArrowRight,
+  Monitor, MemoryStick, Thermometer, Timer, RotateCw, Battery, PenLine, Disc, Activity,
+  CheckCircle, HelpCircle
 } from "lucide-react";
 import mermaid from "mermaid";
 
@@ -409,6 +411,31 @@ function SortIcon({ col, sortCol, sortAsc, C }) {
     : <ChevronDown size={11} className="ml-0.5" style={{ color: C.accentL }} />;
 }
 
+// ── MermaidLightbox: overlay de diagrama ampliado ────────────────────────────
+function MermaidLightbox({ svg, onClose }) {
+  useEffect(() => {
+    const onKey = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div onClick={onClose}
+         style={{ position:"fixed", inset:0, zIndex:9999, background:"rgba(0,0,0,0.85)",
+                  display:"flex", alignItems:"center", justifyContent:"center", cursor:"zoom-out" }}>
+      <div onClick={e => e.stopPropagation()}
+           style={{ maxWidth:"92vw", maxHeight:"88vh", overflow:"auto", background:"#0f0f1a",
+                    borderRadius:"16px", padding:"24px", position:"relative",
+                    border:"1px solid #4f46e5", cursor:"default" }}>
+        <button onClick={onClose}
+                style={{ position:"absolute", top:10, right:12, background:"none", border:"none",
+                         color:"#a5b4fc", fontSize:20, cursor:"pointer", lineHeight:1 }}>✕</button>
+        <div dangerouslySetInnerHTML={{ __html: svg }}
+             style={{ minWidth:"400px", display:"flex", justifyContent:"center" }} />
+      </div>
+    </div>
+  );
+}
+
 // ── MermaidDiagram: renderiza un diagrama Mermaid en el chat ─────────────────
 let _mermaidReady = false;
 function ensureMermaid() {
@@ -423,42 +450,146 @@ function ensureMermaid() {
 let _mermaidCounter = 0;
 const MermaidDiagram = memo(function MermaidDiagram({ code, C }) {
   const ref = useRef(null);
-  const idRef = useRef(null);
-  if (!idRef.current) idRef.current = `mermaid-${++_mermaidCounter}`;
   const [error, setError] = useState(null);
+  const [svg, setSvg] = useState(null);
+  const [lightbox, setLightbox] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (!ref.current) return;
     ensureMermaid();
-    // Use a fresh unique ID each render to avoid Mermaid's internal ID cache
     const id = `mermaid-render-${++_mermaidCounter}`;
     setError(null);
-    // Remove any stale element with this id that Mermaid may have left in the DOM
     document.getElementById(id)?.remove();
-    mermaid.render(id, code.trim()).then(({ svg }) => {
-      if (ref.current) ref.current.innerHTML = svg;
-    }).catch(err => {
-      setError(String(err?.message || err));
-    });
+    mermaid.render(id, code.trim()).then(({ svg: s }) => {
+      setSvg(s);
+      if (ref.current) ref.current.innerHTML = s;
+    }).catch(err => setError(String(err?.message || err)));
   }, [code]);
+
+  const copyCode = () => {
+    navigator.clipboard.writeText(code.trim()).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  };
 
   if (error) return (
     <pre className="rounded-lg text-[10px] p-3 my-1.5 overflow-x-auto font-mono leading-relaxed"
-         style={{ background: C?.bgDark || "#0a0a12", color: "#f87171",
-                  border:`1px solid #f8717140` }}>
+         style={{ background: C?.bgDark || "#0a0a12", color: "#f87171", border:`1px solid #f8717140` }}>
       {`[Mermaid error]\n${error}\n\n${code}`}
     </pre>
   );
   return (
-    <div ref={ref} className="my-2 rounded-xl overflow-x-auto flex justify-center"
-         style={{ background: "#0f0f1a", border:`1px solid ${C?.border || "#2a2a40"}`,
-                  padding: "12px", minHeight: "60px" }} />
+    <>
+      {lightbox && svg && <MermaidLightbox svg={svg} onClose={() => setLightbox(false)} />}
+      <div className="my-2 rounded-xl overflow-hidden" style={{ border:`1px solid ${C?.border || "#2a2a40"}` }}>
+        <div className="flex items-center justify-between px-3 py-1.5"
+             style={{ background:"#0a0a18", borderBottom:`1px solid ${C?.border || "#2a2a40"}` }}>
+          <span className="text-[9px] font-mono opacity-40">mermaid</span>
+          <div className="flex gap-2">
+            <button onClick={copyCode}
+                    style={{ background: copied ? "#22c55e22" : "#ffffff0a", color: copied ? "#4ade80" : "#a5b4fc",
+                             border:"none", cursor:"pointer", fontSize:10, padding:"2px 8px", borderRadius:4 }}>
+              {copied ? "✓ copiado" : "copiar"}
+            </button>
+            <button onClick={() => setLightbox(true)}
+                    style={{ background:"#ffffff0a", color:"#a5b4fc", border:"none",
+                             cursor:"pointer", fontSize:10, padding:"2px 8px", borderRadius:4 }}>
+              ⤢ ampliar
+            </button>
+          </div>
+        </div>
+        <div ref={ref} className="overflow-x-auto flex justify-center"
+             style={{ background:"#0f0f1a", padding:"16px", minHeight:"60px",
+                      cursor: svg ? "zoom-in" : "default" }}
+             onClick={() => svg && setLightbox(true)} />
+      </div>
+    </>
   );
 });
 
-// ── ChatMarkdown: renderiza markdown básico con listas, headers, bold, code ──
+// ── CodeBlock: bloque de código estilo Claude Code con líneas numeradas ──────
+function CodeBlock({ code, lang, C }) {
+  const [copiedAll, setCopiedAll] = useState(false);
+  const [copiedLine, setCopiedLine] = useState(null);
+  const lines = code.split("\n");
+
+  const copyAll = () => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopiedAll(true);
+      setTimeout(() => setCopiedAll(false), 1800);
+    });
+  };
+  const copyLine = (i, line) => {
+    navigator.clipboard.writeText(line).then(() => {
+      setCopiedLine(i);
+      setTimeout(() => setCopiedLine(null), 1200);
+    });
+  };
+
+  const bg     = "#0b0b14";
+  const bgHov  = "#ffffff09";
+  const border = C?.border || "#2a2a40";
+  const accent = C?.accentL || "#a5b4fc";
+  const green  = "#a0f0c0";
+
+  return (
+    <div className="my-2 rounded-xl overflow-hidden text-[11px] font-mono"
+         style={{ border:`1px solid ${border}`, background: bg }}>
+      {/* header */}
+      <div className="flex items-center justify-between px-4 py-2"
+           style={{ background:"#0d0d1c", borderBottom:`1px solid ${border}` }}>
+        <div className="flex items-center gap-2">
+          <span style={{ width:8, height:8, borderRadius:"50%", background:"#ff5f57", display:"inline-block" }}/>
+          <span style={{ width:8, height:8, borderRadius:"50%", background:"#febc2e", display:"inline-block" }}/>
+          <span style={{ width:8, height:8, borderRadius:"50%", background:"#28c840", display:"inline-block" }}/>
+          {lang && <span className="ml-2 text-[9px] opacity-40 font-mono">{lang}</span>}
+        </div>
+        <button onClick={copyAll}
+                style={{ background: copiedAll ? "#22c55e18" : "transparent",
+                         color: copiedAll ? "#4ade80" : accent, border:"none",
+                         cursor:"pointer", fontSize:10, padding:"2px 10px",
+                         borderRadius:6, transition:"all 0.15s" }}>
+          {copiedAll ? "✓ copiado" : "copiar todo"}
+        </button>
+      </div>
+      {/* lines */}
+      <div className="overflow-x-auto" style={{ maxHeight: lines.length > 40 ? "480px" : "none", overflowY: lines.length > 40 ? "auto" : "visible" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+          <tbody>
+            {lines.map((line, i) => (
+              <tr key={i}
+                  onClick={() => copyLine(i, line)}
+                  title="Click para copiar esta línea"
+                  style={{ cursor:"pointer", background: copiedLine === i ? "#22c55e10" : "transparent",
+                           transition:"background 0.1s" }}
+                  onMouseEnter={e => e.currentTarget.style.background = copiedLine === i ? "#22c55e10" : bgHov}
+                  onMouseLeave={e => e.currentTarget.style.background = copiedLine === i ? "#22c55e10" : "transparent"}>
+                <td style={{ color:"#ffffff20", textAlign:"right", paddingRight:12, paddingLeft:12,
+                             userSelect:"none", width:1, whiteSpace:"nowrap", fontSize:10,
+                             paddingTop:1, paddingBottom:1 }}>
+                  {copiedLine === i ? "✓" : i + 1}
+                </td>
+                <td style={{ color: green, paddingRight:16, whiteSpace:"pre", paddingTop:1, paddingBottom:1 }}>
+                  {line || " "}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── ChatMarkdown: renderiza markdown estilo Claude Code ───────────────────────
 const ChatMarkdown = memo(function ChatMarkdown({ text, C }) {
-  // Separar bloques de código primero (capturando el lenguaje)
+  const accent  = C?.accentL  || "#a5b4fc";
+  const accent2 = C?.accent   || "#6366f1";
+  const textSec = C?.textSec  || "#94a3b8";
+  const bgInline = C?.bgCard2 || "#1a1a2e";
+
+  // ── split en bloques de código (capturando lenguaje) ────────────────────
   const parts = [];
   const codeBlockRe = /```(\w+)?\n?([\s\S]*?)```/g;
   let last = 0, m;
@@ -470,108 +601,208 @@ const ChatMarkdown = memo(function ChatMarkdown({ text, C }) {
   }
   if (last < text.length) parts.push({ type:"text", val: text.slice(last) });
 
-  // Renderizar inline: **bold**, `code`, *italic*
+  // ── inline: **bold**, `code`, *italic*, ~~strike~~ ──────────────────────
   function renderInline(str, keyPfx) {
-    const segs = str.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g);
+    const segs = str.split(/(\*\*[^*]+\*\*|`[^`\n]+`|\*[^*\n]+\*|~~[^~]+~~)/g);
     return segs.map((s, j) => {
-      if (s.startsWith("**") && s.endsWith("**"))
-        return <strong key={`${keyPfx}-${j}`} style={{ fontWeight:700, color: C?.textPri }}>{s.slice(2,-2)}</strong>;
-      if (s.startsWith("`") && s.endsWith("`"))
-        return <code key={`${keyPfx}-${j}`} className="font-mono text-[10px] px-1.5 py-0.5 rounded"
-                     style={{ background: C?.bgCard2 || "#1a1a2e", color: C?.accentL || "#a0f0c0" }}>{s.slice(1,-1)}</code>;
+      const k = `${keyPfx}-${j}`;
+      if (s.startsWith("**") && s.endsWith("**") && s.length > 4)
+        return <strong key={k} style={{ fontWeight:700, color:"#e2e8f0" }}>{s.slice(2,-2)}</strong>;
+      if (s.startsWith("`") && s.endsWith("`") && s.length > 2)
+        return (
+          <code key={k} style={{ fontFamily:"monospace", fontSize:11, padding:"1px 6px",
+                                  borderRadius:4, background: bgInline, color:"#a0f0c0",
+                                  border:"1px solid #ffffff10" }}>
+            {s.slice(1,-1)}
+          </code>
+        );
       if (s.startsWith("*") && s.endsWith("*") && s.length > 2)
-        return <em key={`${keyPfx}-${j}`} style={{ fontStyle:"italic", opacity:0.85 }}>{s.slice(1,-1)}</em>;
+        return <em key={k} style={{ fontStyle:"italic", color: textSec }}>{s.slice(1,-1)}</em>;
+      if (s.startsWith("~~") && s.endsWith("~~") && s.length > 4)
+        return <span key={k} style={{ textDecoration:"line-through", opacity:0.5 }}>{s.slice(2,-2)}</span>;
       return s;
     });
   }
 
-  // Renderizar bloque de texto con soporte para headers, listas y párrafos
+  // ── bloque de texto: headers, listas, hr, párrafos ──────────────────────
   function renderTextBlock(val, blockIdx) {
     const lines = val.split("\n");
     const nodes = [];
-    let listItems = [];
+    let listItems   = [];  // bullet list buffer
+    let numItems    = [];  // numbered list buffer
+    let tableRows   = [];  // table buffer
 
     const flushList = () => {
-      if (listItems.length === 0) return;
+      if (listItems.length) {
+        nodes.push(
+          <ul key={`ul-${blockIdx}-${nodes.length}`}
+              style={{ margin:"8px 0", padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:4 }}>
+            {listItems.map((item, li) => (
+              <li key={li} style={{ display:"flex", alignItems:"flex-start", gap:8, fontSize:12, lineHeight:1.55 }}>
+                <span style={{ marginTop:6, width:5, height:5, borderRadius:"50%", flexShrink:0,
+                               background: accent, opacity:0.7 }}/>
+                <span>{renderInline(item, `${blockIdx}-li-${li}`)}</span>
+              </li>
+            ))}
+          </ul>
+        );
+        listItems = [];
+      }
+      if (numItems.length) {
+        nodes.push(
+          <ol key={`ol-${blockIdx}-${nodes.length}`}
+              style={{ margin:"8px 0", padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:3 }}>
+            {numItems.map(({ n, text: t }, li) => (
+              <li key={li} style={{ display:"flex", alignItems:"flex-start", gap:8, fontSize:12, lineHeight:1.55 }}>
+                <span style={{ flexShrink:0, fontVariantNumeric:"tabular-nums", fontSize:11,
+                               color: accent, fontWeight:600, minWidth:18, textAlign:"right" }}>{n}.</span>
+                <span>{renderInline(t, `${blockIdx}-ol-${li}`)}</span>
+              </li>
+            ))}
+          </ol>
+        );
+        numItems = [];
+      }
+    };
+
+    const flushTable = () => {
+      if (!tableRows.length) return;
+      const [header, , ...body] = tableRows; // skip separator row
+      const cols = (header || []);
       nodes.push(
-        <ul key={`ul-${blockIdx}-${nodes.length}`} className="my-1.5 space-y-0.5 pl-0">
-          {listItems.map((item, li) => (
-            <li key={li} className="flex items-start gap-2 text-[11px]">
-              <span className="mt-1.5 w-1 h-1 rounded-full shrink-0" style={{ background: C?.accentL || "#818cf8" }}/>
-              <span>{renderInline(item, `${blockIdx}-li-${li}`)}</span>
-            </li>
-          ))}
-        </ul>
+        <div key={`tbl-${blockIdx}-${nodes.length}`} style={{ overflowX:"auto", margin:"10px 0" }}>
+          <table style={{ borderCollapse:"collapse", fontSize:11, width:"100%" }}>
+            <thead>
+              <tr>
+                {cols.map((c, ci) => (
+                  <th key={ci} style={{ padding:"4px 12px", textAlign:"left", color: accent,
+                                        borderBottom:`1px solid ${C?.border || "#2a2a40"}`,
+                                        fontWeight:600, whiteSpace:"nowrap" }}>
+                    {renderInline(c.trim(), `th-${blockIdx}-${ci}`)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {body.map((row, ri) => (
+                <tr key={ri} style={{ borderBottom:`1px solid #ffffff08` }}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} style={{ padding:"3px 12px", color:"#cbd5e1", verticalAlign:"top" }}>
+                      {renderInline(cell.trim(), `td-${blockIdx}-${ri}-${ci}`)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
-      listItems = [];
+      tableRows = [];
     };
 
     lines.forEach((line, li) => {
       const trimmed = line.trim();
-      if (!trimmed) { flushList(); return; }
 
-      // Header ## o ###
+      // tabla markdown |col|col|
+      if (trimmed.startsWith("|")) {
+        flushList();
+        const cells = trimmed.split("|").slice(1,-1);
+        tableRows.push(cells);
+        return;
+      } else if (tableRows.length) { flushTable(); }
+
+      if (!trimmed) { flushList(); nodes.push(<div key={`sp-${blockIdx}-${li}`} style={{ height:6 }}/>); return; }
+
+      // separador ---
+      if (/^[-*_]{3,}$/.test(trimmed)) {
+        flushList();
+        nodes.push(<hr key={`hr-${blockIdx}-${li}`} style={{ border:"none", borderTop:`1px solid ${C?.border || "#2a2a40"}`, margin:"10px 0", opacity:0.5 }}/>);
+        return;
+      }
+
+      // H1 #
+      if (trimmed.startsWith("# ") && !trimmed.startsWith("## ")) {
+        flushList();
+        nodes.push(
+          <div key={`h1-${blockIdx}-${li}`}
+               style={{ fontSize:15, fontWeight:700, color:"#e2e8f0", margin:"14px 0 6px",
+                        paddingBottom:6, borderBottom:`1px solid ${C?.border || "#2a2a40"}` }}>
+            {renderInline(trimmed.slice(2), `h1-${blockIdx}-${li}`)}
+          </div>
+        );
+        return;
+      }
+      // H2 ##
+      if (trimmed.startsWith("## ") && !trimmed.startsWith("### ")) {
+        flushList();
+        nodes.push(
+          <div key={`h2-${blockIdx}-${li}`}
+               style={{ fontSize:13, fontWeight:700, color: accent2, margin:"12px 0 4px",
+                        display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ width:3, height:14, borderRadius:2, background: accent2, flexShrink:0 }}/>
+            {renderInline(trimmed.slice(3), `h2-${blockIdx}-${li}`)}
+          </div>
+        );
+        return;
+      }
+      // H3 ###
       if (trimmed.startsWith("### ")) {
         flushList();
         nodes.push(
-          <p key={`h3-${blockIdx}-${li}`} className="text-[11px] font-bold mt-2 mb-0.5" style={{ color: C?.accentL }}>
+          <div key={`h3-${blockIdx}-${li}`}
+               style={{ fontSize:12, fontWeight:600, color: accent, margin:"8px 0 2px" }}>
             {renderInline(trimmed.slice(4), `h3-${blockIdx}-${li}`)}
-          </p>
-        );
-        return;
-      }
-      if (trimmed.startsWith("## ")) {
-        flushList();
-        nodes.push(
-          <p key={`h2-${blockIdx}-${li}`} className="text-[12px] font-bold mt-2 mb-1" style={{ color: C?.accent }}>
-            {renderInline(trimmed.slice(3), `h2-${blockIdx}-${li}`)}
-          </p>
-        );
-        return;
-      }
-
-      // Lista con - o •
-      if (trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
-        listItems.push(trimmed.slice(2));
-        return;
-      }
-      // Lista numerada
-      const numMatch = trimmed.match(/^(\d+)\.\s+(.+)/);
-      if (numMatch) {
-        flushList();
-        nodes.push(
-          <div key={`num-${blockIdx}-${li}`} className="flex items-start gap-2 text-[11px] my-0.5">
-            <span className="shrink-0 font-bold text-[10px] mt-0.5 w-4 text-right" style={{ color: C?.accentL }}>
-              {numMatch[1]}.
-            </span>
-            <span>{renderInline(numMatch[2], `num-${blockIdx}-${li}`)}</span>
           </div>
         );
         return;
       }
 
+      // bullet list
+      if (trimmed.startsWith("- ") || trimmed.startsWith("• ") || trimmed.startsWith("* ")) {
+        numItems.length && flushList();
+        listItems.push(trimmed.slice(2));
+        return;
+      }
+      // numbered list
+      const numMatch = trimmed.match(/^(\d+)[.)]\s+(.+)/);
+      if (numMatch) {
+        listItems.length && flushList();
+        numItems.push({ n: numMatch[1], text: numMatch[2] });
+        return;
+      }
+
+      // blockquote >
+      if (trimmed.startsWith("> ")) {
+        flushList();
+        nodes.push(
+          <div key={`bq-${blockIdx}-${li}`}
+               style={{ borderLeft:`3px solid ${accent}`, paddingLeft:12, margin:"4px 0",
+                        color: textSec, fontSize:12, fontStyle:"italic" }}>
+            {renderInline(trimmed.slice(2), `bq-${blockIdx}-${li}`)}
+          </div>
+        );
+        return;
+      }
+
+      // párrafo
       flushList();
       nodes.push(
-        <p key={`p-${blockIdx}-${li}`} className="text-[11px] leading-relaxed">
+        <p key={`p-${blockIdx}-${li}`}
+           style={{ fontSize:12, lineHeight:1.6, margin:"2px 0", color:"#cbd5e1" }}>
           {renderInline(trimmed, `p-${blockIdx}-${li}`)}
         </p>
       );
     });
     flushList();
+    flushTable();
     return nodes;
   }
 
   return (
-    <div className="space-y-1">
+    <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
       {parts.map((p, i) => {
         if (p.type === "mermaid") return <MermaidDiagram key={i} code={p.val} C={C} />;
-        if (p.type === "block") return (
-          <pre key={i} className="rounded-lg text-[10px] p-3 my-1.5 overflow-x-auto font-mono leading-relaxed"
-               style={{ background: C?.bgDark || "#0a0a12", color: C?.green || "#a0f0c0",
-                        border:`1px solid ${C?.border || "#2a2a40"}` }}>
-            {p.val}
-          </pre>
-        );
+        if (p.type === "block")   return <CodeBlock key={i} code={p.val} lang={p.lang} C={C} />;
         return <div key={i}>{renderTextBlock(p.val, i)}</div>;
       })}
     </div>
@@ -1507,6 +1738,551 @@ const ScanHistoryModal = React.memo(function ScanHistoryModal({ history, onClose
   );
 });
 
+// ── SysInfoModal (Task Manager) ──────────────────────────────────────────────
+
+const SysInfoModal = React.memo(function SysInfoModal({ onClose, C }) {
+  const [loading, setLoading]   = useState(true);
+  const [data,    setData]      = useState(null);
+  const [error,   setError]     = useState("");
+  const [diskData,setDiskData]  = useState(null);
+  const [procs,   setProcs]     = useState([]);
+  const [tab,     setTab]       = useState("processes");
+  const [procSearch, setProcSearch] = useState("");
+  const [procSort,   setProcSort]   = useState("mem");
+
+  const fetchSys   = () => fetch(`${API}/api/system-info`).then(r=>r.json()).then(d=>{ if(d.ok) setData(d); }).catch(()=>{});
+  const fetchDisk  = () => fetch(`${API}/api/disk-health`).then(r=>r.json()).then(d=>{ if(d.ok) setDiskData(d); }).catch(()=>{});
+  const fetchProcs = () => fetch(`${API}/api/processes`).then(r=>r.json()).then(d=>{ if(d.ok) setProcs(d.processes||[]); }).catch(()=>{});
+
+  useEffect(() => {
+    Promise.all([
+      fetch(`${API}/api/system-info`).then(r=>r.json()),
+      fetch(`${API}/api/disk-health`).then(r=>r.json()),
+      fetch(`${API}/api/processes`).then(r=>r.json()),
+    ]).then(([sys,disk,p]) => {
+      if(sys.ok) setData(sys); else setError(sys.error||"Error");
+      if(disk.ok) setDiskData(disk);
+      if(p.ok) setProcs(p.processes||[]);
+    }).catch(e=>setError(e.message)).finally(()=>setLoading(false));
+
+    const sysT  = setInterval(fetchSys,   2000);
+    const diskT = setInterval(fetchDisk,  30000);
+    const procT = setInterval(fetchProcs, 2000);
+    return () => { clearInterval(sysT); clearInterval(diskT); clearInterval(procT); };
+  }, []);
+
+  const lc = (p) => p > 85 ? C.red : p > 60 ? C.amber : C.green;
+  const tc = (t) => t >= 75 ? C.red : t >= 55 ? C.amber : C.green;
+  const hc = (h) => h?.toLowerCase() === "good" ? C.green : h?.toLowerCase() === "caution" ? C.amber : h?.toLowerCase() === "bad" ? C.red : C.textMuted;
+
+  const Bar = ({ pct, color, h = "h-1.5" }) => (
+    <div className={`w-full ${h} rounded-full overflow-hidden`} style={{ background: C.diskTrack }}>
+      <div className="h-full rounded-full transition-all duration-300" style={{ width: `${Math.min(pct??0,100)}%`, background: color }}/>
+    </div>
+  );
+
+  const fmtUptime = (sec) => {
+    if (!sec) return "—";
+    const d=Math.floor(sec/86400), h=Math.floor((sec%86400)/3600), m=Math.floor((sec%3600)/60);
+    return [d&&`${d}d`,h&&`${h}h`,`${m}m`].filter(Boolean).join(" ");
+  };
+
+  const StatRow = ({ label, value }) => (
+    <div className="flex items-baseline gap-2 py-1.5" style={{ borderBottom:`1px solid ${C.border}44` }}>
+      <span className="text-[10px] font-medium w-32 shrink-0" style={{ color:C.textMuted }}>{label}</span>
+      <span className="text-[11px] font-mono flex-1 break-all" style={{ color:C.textSec }}>{value||"—"}</span>
+    </div>
+  );
+
+  const TABS = [
+    { id:"processes", label:"Procesos",       Icon: Activity    },
+    { id:"cpu",       label:"CPU",             Icon: Cpu         },
+    { id:"memory",    label:"Memoria",         Icon: MemoryStick },
+    { id:"storage",   label:"Almacenamiento",  Icon: HardDrive   },
+    { id:"overview",  label:"Sistema",         Icon: Monitor     },
+  ];
+
+  const { machine, cpu, ram, gpus = [] } = data || {};
+
+  const filteredProcs = procs
+    .filter(p => p.name.toLowerCase().includes(procSearch.toLowerCase()))
+    .sort((a,b) => procSort==="cpu" ? b.cpu-a.cpu : procSort==="name" ? a.name.localeCompare(b.name) : b.mem-a.mem)
+    .slice(0, 100);
+
+  const totalMem = ram?.total || 1;
+  const cpuLoad  = cpu?.load_pct ?? 0;
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center z-50"
+         style={{ background:"rgba(0,0,0,0.75)" }}
+         onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="rounded-2xl overflow-hidden flex flex-col shadow-2xl"
+           style={{ background:C.bgCard, border:`1px solid ${C.border}`, width:860, maxHeight:"92vh" }}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 shrink-0"
+             style={{ background:C.bgSurface, borderBottom:`1px solid ${C.border}` }}>
+          <div className="flex items-center gap-3">
+            <Activity size={14} style={{ color:C.accentL }}/>
+            <span className="text-sm font-semibold" style={{ color:C.textPri }}>Administrador de tareas</span>
+            <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full font-bold"
+                  style={{ background:`${C.green}20`, color:C.green }}>
+              <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background:C.green }}/>LIVE
+            </span>
+          </div>
+          {!loading && cpu && ram && (
+            <div className="flex items-center gap-4 mr-4">
+              <div className="flex items-center gap-1.5">
+                <Cpu size={10} style={{ color:C.textMuted }}/>
+                <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background:C.diskTrack }}>
+                  <div className="h-full rounded-full" style={{ width:`${cpuLoad}%`, background:lc(cpuLoad) }}/>
+                </div>
+                <span className="text-[9px] font-mono w-7 text-right" style={{ color:lc(cpuLoad) }}>{cpuLoad}%</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <MemoryStick size={10} style={{ color:C.textMuted }}/>
+                <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background:C.diskTrack }}>
+                  <div className="h-full rounded-full" style={{ width:`${ram.pct}%`, background:lc(ram.pct) }}/>
+                </div>
+                <span className="text-[9px] font-mono w-7 text-right" style={{ color:lc(ram.pct) }}>{ram.pct}%</span>
+              </div>
+            </div>
+          )}
+          <button onClick={onClose} style={{ color:C.textMuted }} className="hover:brightness-150 transition-all"><X size={15}/></button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex shrink-0 px-1 pt-1 gap-0.5"
+             style={{ background:C.bgSurface, borderBottom:`1px solid ${C.border}` }}>
+          {TABS.map(({ id, label, Icon }) => {
+            const active = tab===id;
+            return (
+              <button key={id} onClick={()=>setTab(id)}
+                      className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-t-lg transition-all"
+                      style={{
+                        color:        active ? C.accentL  : C.textMuted,
+                        background:   active ? C.bgCard   : "transparent",
+                        borderBottom: active ? `2px solid ${C.accentL}` : "2px solid transparent",
+                      }}>
+                <Icon size={11}/>{label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-hidden flex flex-col">
+          {loading && (
+            <div className="flex items-center justify-center py-20 gap-3 flex-1" style={{ color:C.textMuted }}>
+              <Loader2 size={20} className="animate-spin"/> Cargando…
+            </div>
+          )}
+          {!loading && error && (
+            <div className="flex flex-col items-center justify-center py-16 gap-2 flex-1" style={{ color:C.red }}>
+              <AlertCircle size={28}/><p className="text-sm">{error}</p>
+            </div>
+          )}
+
+          {/* PROCESOS */}
+          {!loading && tab==="processes" && (
+            <div className="flex flex-col flex-1 overflow-hidden">
+              <div className="flex items-center gap-3 px-4 py-2 shrink-0"
+                   style={{ background:C.bgCard2, borderBottom:`1px solid ${C.border}` }}>
+                <div className="flex items-center gap-1.5 flex-1 px-2.5 py-1 rounded-lg"
+                     style={{ background:C.bgCard, border:`1px solid ${C.border}` }}>
+                  <Search size={11} style={{ color:C.textMuted }}/>
+                  <input value={procSearch} onChange={e=>setProcSearch(e.target.value)}
+                         placeholder="Buscar proceso…"
+                         className="bg-transparent outline-none text-xs flex-1"
+                         style={{ color:C.textPri }}/>
+                </div>
+                <span className="text-[10px]" style={{ color:C.textMuted }}>{filteredProcs.length} procesos</span>
+                {[["mem","RAM"],["cpu","CPU"],["name","Nombre"]].map(([k,l])=>(
+                  <button key={k} onClick={()=>setProcSort(k)}
+                          className="text-[9px] px-2 py-0.5 rounded font-medium transition-all"
+                          style={{ background:procSort===k?`${C.accentL}25`:"transparent", color:procSort===k?C.accentL:C.textMuted, border:`1px solid ${procSort===k?C.accentL+"44":C.border}` }}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <div className="grid px-4 py-1.5 text-[9px] font-bold uppercase tracking-wider shrink-0"
+                   style={{ gridTemplateColumns:"1fr 80px 80px 60px 120px", color:C.textMuted, borderBottom:`1px solid ${C.border}`, background:C.bgCard2 }}>
+                <span>Nombre</span>
+                <span className="text-right">CPU</span>
+                <span className="text-right">RAM</span>
+                <span className="text-right">PID</span>
+                <span className="text-right">Usuario</span>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {filteredProcs.map((p, i) => {
+                  const cpuColor = p.cpu > 20 ? C.red : p.cpu > 5 ? C.amber : C.textMuted;
+                  const memPct   = (p.mem / totalMem) * 100;
+                  const memColor = memPct > 10 ? C.red : memPct > 3 ? C.amber : C.textMuted;
+                  return (
+                    <div key={p.pid}
+                         className="grid items-center px-4 py-1 hover:brightness-110 transition-all"
+                         style={{ gridTemplateColumns:"1fr 80px 80px 60px 120px", background: i%2===0 ? "transparent" : `${C.bgCard2}66`, borderBottom:`1px solid ${C.border}18` }}>
+                      <span className="text-[11px] truncate font-medium" style={{ color:C.textPri }}>{p.name}</span>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {p.cpu > 0.5 && <div className="w-10 h-1 rounded-full overflow-hidden" style={{ background:C.diskTrack }}><div className="h-full rounded-full" style={{ width:`${Math.min(p.cpu*2,100)}%`, background:cpuColor }}/></div>}
+                        <span className="text-[10px] font-mono w-8 text-right" style={{ color:cpuColor }}>{p.cpu > 0 ? `${p.cpu}%` : "—"}</span>
+                      </div>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {p.mem > 10*1024*1024 && <div className="w-10 h-1 rounded-full overflow-hidden" style={{ background:C.diskTrack }}><div className="h-full rounded-full" style={{ width:`${Math.min(memPct*10,100)}%`, background:memColor }}/></div>}
+                        <span className="text-[10px] font-mono w-14 text-right" style={{ color:memColor }}>{fmtSize(p.mem)}</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-right" style={{ color:C.textMuted }}>{p.pid}</span>
+                      <span className="text-[9px] truncate text-right" style={{ color:C.textMuted }}>{p.user?.split("\\").pop()||"—"}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* CPU */}
+          {!loading && data && tab==="cpu" && (
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div className="rounded-xl p-4" style={{ background:C.bgCard2, border:`1px solid ${C.border}` }}>
+                <p className="text-sm font-semibold mb-1" style={{ color:C.textPri }}>{cpu.name}</p>
+                <p className="text-[10px] mb-4" style={{ color:C.textMuted }}>{cpu.cores} núcleos · {cpu.threads} hilos · {cpu.max_mhz} MHz máx</p>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px]" style={{ color:C.textMuted }}>Carga global</span>
+                  <span className="text-[11px] font-mono font-bold" style={{ color:lc(cpu.load_pct) }}>{cpu.load_pct}%</span>
+                </div>
+                <Bar pct={cpu.load_pct} color={lc(cpu.load_pct)} h="h-2.5"/>
+                {cpu.temperature != null && (
+                  <div className="flex items-center gap-2 mt-3">
+                    <Thermometer size={12} style={{ color:tc(cpu.temperature) }}/>
+                    <span className="text-[10px]" style={{ color:C.textMuted }}>Temperatura</span>
+                    <span className="text-sm font-mono font-bold ml-auto" style={{ color:tc(cpu.temperature) }}>{cpu.temperature}°C</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-[10px]" style={{ color:C.textMuted }}>Frecuencia actual</span>
+                  <span className="text-[11px] font-mono ml-auto" style={{ color:C.textSec }}>{cpu.current_mhz} MHz</span>
+                </div>
+              </div>
+              {cpu.per_core_pct?.length > 0 && (
+                <div className="rounded-xl p-4" style={{ background:C.bgCard2, border:`1px solid ${C.border}` }}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color:C.textMuted }}>Carga por núcleo</p>
+                  <div className="grid gap-2" style={{ gridTemplateColumns:`repeat(${Math.min(cpu.per_core_pct.length,8)},1fr)` }}>
+                    {cpu.per_core_pct.map((p,i)=>(
+                      <div key={i} className="flex flex-col items-center gap-1">
+                        <span className="text-[9px]" style={{ color:C.textMuted }}>C{i+1}</span>
+                        <div className="w-full rounded overflow-hidden flex flex-col justify-end" style={{ height:56, background:C.diskTrack }}>
+                          <div className="w-full transition-all duration-300" style={{ height:`${p}%`, background:lc(p), minHeight:p>0?2:0 }}/>
+                        </div>
+                        <span className="text-[9px] font-mono" style={{ color:lc(p) }}>{p}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {gpus?.map((g,i)=>(
+                <div key={i} className="rounded-xl p-4" style={{ background:C.bgCard2, border:`1px solid ${C.border}` }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1.5">
+                      <Activity size={12} style={{ color:C.accentL }}/>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color:C.textMuted }}>GPU {gpus.length>1?i+1:""}</span>
+                    </div>
+                    {g.utilization_pct!=null && <span className="text-sm font-bold font-mono" style={{ color:lc(g.utilization_pct) }}>{g.utilization_pct}%</span>}
+                  </div>
+                  <p className="text-[11px] font-medium mb-2 truncate" style={{ color:C.textPri }}>{g.name}</p>
+                  {g.utilization_pct!=null && <Bar pct={g.utilization_pct} color={lc(g.utilization_pct)} h="h-2"/>}
+                  <div className="flex gap-4 mt-2 flex-wrap items-center">
+                    {g.temperature!=null && (
+                      <div className="flex items-center gap-1.5">
+                        <Thermometer size={11} style={{ color:tc(g.temperature) }}/>
+                        <span className="text-[11px] font-mono font-bold" style={{ color:tc(g.temperature) }}>{g.temperature}°C</span>
+                      </div>
+                    )}
+                    {g.vram_bytes>0 && <span className="text-[9px]" style={{ color:C.textMuted }}>VRAM <span className="font-mono" style={{ color:C.textSec }}>{fmtSize(g.vram_bytes)}</span></span>}
+                    {g.vram_used_bytes!=null && <span className="text-[9px]" style={{ color:C.textMuted }}>Usada <span className="font-mono" style={{ color:C.textSec }}>{fmtSize(g.vram_used_bytes)}</span></span>}
+                    {g.resolution && <span className="text-[9px]" style={{ color:C.textMuted }}>Res <span className="font-mono" style={{ color:C.textSec }}>{g.resolution}</span></span>}
+                    {g.driver && <span className="text-[9px]" style={{ color:C.textMuted }}>Driver <span className="font-mono" style={{ color:C.textSec }}>{g.driver}</span></span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* MEMORIA */}
+          {!loading && data && tab==="memory" && (
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div className="rounded-xl p-4" style={{ background:C.bgCard2, border:`1px solid ${C.border}` }}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color:C.textMuted }}>Uso de RAM</span>
+                  <span className="text-sm font-bold font-mono" style={{ color:lc(ram.pct) }}>{ram.pct}%</span>
+                </div>
+                <Bar pct={ram.pct} color={lc(ram.pct)} h="h-3"/>
+                <div className="flex justify-between mt-2 text-[10px]" style={{ color:C.textMuted }}>
+                  <span>Usada: <span className="font-mono" style={{ color:C.textSec }}>{fmtSize(ram.used)}</span></span>
+                  <span>Libre: <span className="font-mono" style={{ color:C.green }}>{fmtSize(ram.available)}</span></span>
+                  <span>Total: <span className="font-mono" style={{ color:C.textSec }}>{fmtSize(ram.total)}</span></span>
+                </div>
+              </div>
+              {ram.slots?.length>0 && (
+                <div className="rounded-xl p-4" style={{ background:C.bgCard2, border:`1px solid ${C.border}` }}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color:C.textMuted }}>Módulos instalados</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {ram.slots.map((s,i)=>(
+                      <div key={i} className="rounded-lg p-3" style={{ background:C.bgCard, border:`1px solid ${C.border}` }}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[9px] font-bold uppercase" style={{ color:C.accentL }}>Slot {i+1}</span>
+                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ background:`${C.accent}20`, color:C.textMuted }}>{s.type}</span>
+                        </div>
+                        <p className="text-base font-bold font-mono" style={{ color:C.textPri }}>{fmtSize(s.capacity)}</p>
+                        <p className="text-[9px] mt-0.5" style={{ color:C.textMuted }}>{s.speed_mhz?`${s.speed_mhz} MHz · `:""}{s.manufacturer}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {gpus?.some(g=>g.vram_bytes>0) && (
+                <div className="rounded-xl p-4" style={{ background:C.bgCard2, border:`1px solid ${C.border}` }}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color:C.textMuted }}>VRAM</p>
+                  {gpus.filter(g=>g.vram_bytes>0).map((g,i)=>{
+                    const vp=g.vram_used_bytes&&g.vram_bytes?Math.round(g.vram_used_bytes/g.vram_bytes*100):null;
+                    return (
+                      <div key={i} className={i>0?"mt-3":""}>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-[10px] truncate" style={{ color:C.textPri }}>{g.name}</span>
+                          <span className="text-[10px] font-mono ml-2 shrink-0" style={{ color:C.textMuted }}>{g.vram_used_bytes?`${fmtSize(g.vram_used_bytes)} / `:""}{fmtSize(g.vram_bytes)}</span>
+                        </div>
+                        {vp!=null && <Bar pct={vp} color={lc(vp)}/>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ALMACENAMIENTO */}
+          {!loading && tab==="storage" && (
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              {!diskData?.disks?.length && (
+                <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color:C.textMuted }}>
+                  <HardDrive size={28} className="opacity-30"/>
+                  <p className="text-sm">No se detectaron discos</p>
+                </div>
+              )}
+              {diskData?.disks?.map((disk,i)=>{
+                const hColor=hc(disk.health);
+                const usage=disk.disk_usage;
+                const isSSD=disk.media_type?.toLowerCase().includes("ssd")||disk.media_type?.toLowerCase().includes("solid");
+                const HealthIcon = disk.health?.toLowerCase()==="good" ? CheckCircle2
+                                 : disk.health?.toLowerCase()==="caution" ? AlertTriangle
+                                 : disk.health?.toLowerCase()==="bad" ? AlertCircle
+                                 : HelpCircle;
+                const metrics=[
+                  disk.temperature       !=null && { label:"Temperatura",  Icon:Thermometer, value:`${disk.temperature}°C`,                     color:tc(disk.temperature) },
+                  disk.power_on_hours    !=null && { label:"Horas de uso", Icon:Timer,       value:disk.power_on_hours.toLocaleString("es-ES"),  color:C.accentL, sub:`≈ ${(disk.power_on_hours/8760).toFixed(1)} años` },
+                  disk.start_stop_cycles !=null && { label:"Ciclos E/A",   Icon:RotateCw,    value:disk.start_stop_cycles.toLocaleString("es-ES"),color:C.accentL },
+                  disk.wear_pct          !=null && { label:"Vida usada",   Icon:Battery,     value:`${disk.wear_pct}%`,                           color:disk.wear_pct>80?C.red:disk.wear_pct>50?C.amber:C.green, sub:`${100-disk.wear_pct}% restante` },
+                  disk.read_errors       !=null && { label:"Err. lectura", Icon:BookOpen,    value:disk.read_errors.toLocaleString("es-ES"),      color:disk.read_errors>0?C.amber:C.green },
+                  disk.write_errors      !=null && { label:"Err. escritura",Icon:PenLine,    value:disk.write_errors.toLocaleString("es-ES"),     color:disk.write_errors>0?C.red:C.green },
+                ].filter(Boolean);
+                return (
+                  <div key={i} className="rounded-xl overflow-hidden" style={{ border:`1px solid ${hColor}50` }}>
+                    {/* Disk header */}
+                    <div className="px-4 py-3 flex items-center gap-3" style={{ background:`${hColor}10`, borderBottom:`1px solid ${hColor}30` }}>
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background:`${hColor}20` }}>
+                        {isSSD ? <Zap size={14} style={{ color:hColor }}/> : <Disc size={14} style={{ color:hColor }}/>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold truncate" style={{ color:C.textPri }}>{disk.model}</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0" style={{ background:`${C.accent}18`, color:C.textMuted }}>{disk.media_type} · {disk.bus_type}</span>
+                          {disk.is_boot && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background:`${C.green}20`, color:C.green }}>BOOT</span>}
+                        </div>
+                        <div className="text-[9px] mt-0.5 flex gap-x-3 flex-wrap" style={{ color:C.textMuted }}>
+                          {disk.serial && disk.serial!=="—" && <span>S/N: {disk.serial}</span>}
+                          {disk.size_bytes>0 && <span>{fmtSize(disk.size_bytes)}</span>}
+                          {disk.firmware && disk.firmware!=="—" && <span>FW: {disk.firmware}</span>}
+                          {disk.partition_style && disk.partition_style!=="—" && <span>{disk.partition_style}</span>}
+                        </div>
+                      </div>
+                      {/* Health badge — Lucide icon, no emoji */}
+                      <div className="shrink-0 px-3 py-1.5 rounded-lg flex flex-col items-center gap-0.5 min-w-[52px]"
+                           style={{ background:`${hColor}20`, border:`1px solid ${hColor}40` }}>
+                        <HealthIcon size={15} style={{ color:hColor }}/>
+                        <p className="text-[9px] font-bold" style={{ color:hColor }}>{disk.health||"?"}</p>
+                      </div>
+                    </div>
+                    {/* Disk body */}
+                    <div className="px-4 py-3 space-y-3" style={{ background:C.bgCard2 }}>
+                      {usage && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[9px] font-semibold flex items-center gap-1" style={{ color:C.textMuted }}><HardDrive size={9}/> Espacio</span>
+                            <span className="text-[10px] font-mono" style={{ color:C.textSec }}>{fmtSize(usage.used)} / {fmtSize(usage.total)} · {usage.pct}%</span>
+                          </div>
+                          <Bar pct={usage.pct} color={usage.pct>90?C.red:usage.pct>75?C.amber:C.accent} h="h-2"/>
+                        </div>
+                      )}
+                      {metrics.length>0 && (
+                        <div className="grid grid-cols-3 gap-2">
+                          {metrics.map((m,mi)=>(
+                            <div key={mi} className="rounded-lg px-3 py-2" style={{ background:C.bgCard, border:`1px solid ${C.border}` }}>
+                              <div className="flex items-center gap-1 mb-1">
+                                <m.Icon size={9} style={{ color:C.textMuted }}/>
+                                <span className="text-[8px] font-semibold uppercase tracking-wide" style={{ color:C.textMuted }}>{m.label}</span>
+                              </div>
+                              <p className="text-sm font-bold font-mono" style={{ color:m.color }}>{m.value}</p>
+                              {m.sub && <p className="text-[8px] mt-0.5" style={{ color:C.textMuted }}>{m.sub}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {metrics.length===0 && !usage && (
+                        <p className="text-[10px] text-center py-2" style={{ color:C.textMuted }}>Sin datos SMART disponibles (requiere administrador)</p>
+                      )}
+                      {(disk.read_errors>0||disk.write_errors>0||disk.wear_pct>80) && (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background:`${C.red}10`, border:`1px solid ${C.red}30` }}>
+                          <AlertTriangle size={11} style={{ color:C.red }}/>
+                          <span className="text-[9px]" style={{ color:C.red }}>Problemas detectados. Haz una copia de seguridad.</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* SISTEMA — vista resumen + specs */}
+          {!loading && data && tab==="overview" && (
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+
+              {/* Summary cards */}
+              <div className="grid grid-cols-4 gap-3">
+                {/* CPU */}
+                <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background:C.bgCard2, border:`1px solid ${C.border}` }}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5"><Cpu size={11} style={{ color:C.accentL }}/><span className="text-[9px] font-bold uppercase tracking-wide" style={{ color:C.textMuted }}>CPU</span></div>
+                    <span className="text-[11px] font-mono font-bold" style={{ color:lc(cpuLoad) }}>{cpuLoad}%</span>
+                  </div>
+                  <Bar pct={cpuLoad} color={lc(cpuLoad)} h="h-1.5"/>
+                  <p className="text-[9px]" style={{ color:C.textSec }}>{cpu.cores}C / {cpu.threads}T · {cpu.current_mhz} MHz</p>
+                  {cpu.temperature!=null && (
+                    <div className="flex items-center gap-1"><Thermometer size={9} style={{ color:tc(cpu.temperature) }}/><span className="text-[9px] font-mono font-bold" style={{ color:tc(cpu.temperature) }}>{cpu.temperature}°C</span></div>
+                  )}
+                </div>
+
+                {/* RAM */}
+                <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background:C.bgCard2, border:`1px solid ${C.border}` }}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5"><MemoryStick size={11} style={{ color:C.accentL }}/><span className="text-[9px] font-bold uppercase tracking-wide" style={{ color:C.textMuted }}>RAM</span></div>
+                    <span className="text-[11px] font-mono font-bold" style={{ color:lc(ram.pct) }}>{ram.pct}%</span>
+                  </div>
+                  <Bar pct={ram.pct} color={lc(ram.pct)} h="h-1.5"/>
+                  <p className="text-[9px]" style={{ color:C.textSec }}>{fmtSize(ram.used)} / {fmtSize(ram.total)}</p>
+                  {ram.slots?.length>0 && <p className="text-[9px]" style={{ color:C.textMuted }}>{ram.slots.length} módulo{ram.slots.length!==1?"s":""} · {ram.slots[0]?.type}</p>}
+                </div>
+
+                {/* GPU (first one) */}
+                {gpus?.length>0 && (
+                  <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background:C.bgCard2, border:`1px solid ${C.border}` }}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5"><Activity size={11} style={{ color:C.accentL }}/><span className="text-[9px] font-bold uppercase tracking-wide" style={{ color:C.textMuted }}>GPU</span></div>
+                      {gpus[0].utilization_pct!=null && <span className="text-[11px] font-mono font-bold" style={{ color:lc(gpus[0].utilization_pct) }}>{gpus[0].utilization_pct}%</span>}
+                    </div>
+                    {gpus[0].utilization_pct!=null && <Bar pct={gpus[0].utilization_pct} color={lc(gpus[0].utilization_pct)} h="h-1.5"/>}
+                    <p className="text-[9px] truncate" style={{ color:C.textSec }}>{gpus[0].vram_bytes>0?fmtSize(gpus[0].vram_bytes)+" VRAM":gpus[0].name}</p>
+                    {gpus[0].temperature!=null && (
+                      <div className="flex items-center gap-1"><Thermometer size={9} style={{ color:tc(gpus[0].temperature) }}/><span className="text-[9px] font-mono font-bold" style={{ color:tc(gpus[0].temperature) }}>{gpus[0].temperature}°C</span></div>
+                    )}
+                  </div>
+                )}
+
+                {/* Uptime */}
+                <div className="rounded-xl p-3 flex flex-col gap-2" style={{ background:C.bgCard2, border:`1px solid ${C.border}` }}>
+                  <div className="flex items-center gap-1.5"><Timer size={11} style={{ color:C.accentL }}/><span className="text-[9px] font-bold uppercase tracking-wide" style={{ color:C.textMuted }}>Encendido</span></div>
+                  <p className="text-base font-bold font-mono leading-tight" style={{ color:C.textPri }}>{fmtUptime(machine.uptime_sec)}</p>
+                  <p className="text-[9px] truncate" style={{ color:C.textMuted }}>{machine.os?.replace("Microsoft ","")}</p>
+                </div>
+              </div>
+
+              {/* Machine specs */}
+              <div className="rounded-xl p-4" style={{ background:C.bgCard2, border:`1px solid ${C.border}` }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Monitor size={12} style={{ color:C.accentL }}/>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color:C.textMuted }}>Equipo</span>
+                </div>
+                {[
+                  ["Fabricante",  machine.manufacturer],
+                  ["Modelo",      machine.model],
+                  ["Sistema",     machine.os],
+                  ["Versión OS",  machine.os_version ? `${machine.os_version} (build ${machine.os_build})` : null],
+                  ["BIOS",        machine.bios_version],
+                ].filter(([,v])=>v).map(([k,v])=>(
+                  <StatRow key={k} label={k} value={v}/>
+                ))}
+              </div>
+
+              {/* CPU specs */}
+              <div className="rounded-xl p-4" style={{ background:C.bgCard2, border:`1px solid ${C.border}` }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Cpu size={12} style={{ color:C.accentL }}/>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color:C.textMuted }}>Procesador</span>
+                </div>
+                {[
+                  ["Modelo",      cpu.name],
+                  ["Núcleos",     cpu.cores!=null ? `${cpu.cores} físicos · ${cpu.threads} lógicos` : null],
+                  ["Velocidad",   cpu.max_mhz ? `${cpu.current_mhz} MHz actual · ${cpu.max_mhz} MHz máx` : null],
+                  ["Temperatura", cpu.temperature!=null ? `${cpu.temperature}°C` : null],
+                ].filter(([,v])=>v).map(([k,v])=>(
+                  <StatRow key={k} label={k} value={v}/>
+                ))}
+              </div>
+
+              {/* GPU specs */}
+              {gpus?.length>0 && (
+                <div className="rounded-xl p-4" style={{ background:C.bgCard2, border:`1px solid ${C.border}` }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Activity size={12} style={{ color:C.accentL }}/>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color:C.textMuted }}>Tarjeta gráfica</span>
+                  </div>
+                  {gpus.map((g,i)=>(
+                    <div key={i} className={i>0?"mt-3 pt-3":""}
+                         style={{ borderTop:i>0?`1px solid ${C.border}44`:"none" }}>
+                      {gpus.length>1 && <p className="text-[9px] font-bold uppercase mb-1.5" style={{ color:C.accentL }}>GPU {i+1}</p>}
+                      {[
+                        ["Modelo",       g.name],
+                        ["VRAM",         g.vram_bytes>0 ? fmtSize(g.vram_bytes) : null],
+                        ["Resolución",   g.resolution],
+                        ["Driver",       g.driver],
+                        ["Temperatura",  g.temperature!=null ? `${g.temperature}°C` : null],
+                      ].filter(([,v])=>v).map(([k,v])=>(
+                        <StatRow key={k} label={k} value={v}/>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-between items-center px-5 py-2.5 border-t shrink-0"
+             style={{ borderColor:C.border, background:C.bgSurface }}>
+          <span className="text-[9px]" style={{ color:C.textMuted }}>
+            {tab==="processes" ? `${procs.length} procesos en total` : ""}
+          </span>
+          <button onClick={onClose}
+                  className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all hover:brightness-110"
+                  style={{ background:C.bgCard2, color:C.textSec, border:`1px solid ${C.border}` }}>
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 // ── Componente principal ───────────────────────────────────────────────────────
 
 export default function App() {
@@ -1587,6 +2363,9 @@ export default function App() {
 
   // ── Comparador de carpetas ────────────────────────────────────────────────────
   const [showCompare, setShowCompare] = useState(false);
+
+  // ── Info del sistema ──────────────────────────────────────────────────────────
+  const [showSysInfo, setShowSysInfo] = useState(false);
 
   // ── Limpiador de temporales ───────────────────────────────────────────────────
   const [showTempCleaner, setShowTempCleaner] = useState(false);
@@ -2273,6 +3052,13 @@ export default function App() {
               </button>
             ))}
           </div>
+
+          {/* Info del sistema */}
+          <button onClick={() => setShowSysInfo(true)} title="Información del sistema"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-all hover:brightness-110 shrink-0"
+                  style={{ background:`${C.accent}18`, color: C.accentL, border:`1px solid ${C.accent}44` }}>
+            <Cpu size={12}/> Sistema
+          </button>
 
           {/* Limpiador de temporales */}
           <button onClick={() => setShowTempCleaner(true)} title="Limpiar archivos temporales"
@@ -3585,6 +4371,9 @@ export default function App() {
       {/* ════════════════════════════════════════════════════════
           MODALES: HISTORIAL / COMPARADOR
       ════════════════════════════════════════════════════════ */}
+      {showSysInfo && (
+        <SysInfoModal onClose={() => setShowSysInfo(false)} C={C} />
+      )}
       {showTempCleaner && (
         <TempCleanerModal onClose={() => setShowTempCleaner(false)} C={C} />
       )}
