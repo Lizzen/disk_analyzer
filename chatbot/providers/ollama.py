@@ -80,7 +80,27 @@ class OllamaProvider(AIProvider):
     ) -> str:
         import ollama
 
-        api_msgs = [{"role": m.role, "content": m.content} for m in messages]
+        # Convertir mensajes multipart (imagen) al formato Ollama:
+        # {"role":..., "content": str, "images": [<base64>]}
+        api_msgs = []
+        for m in messages:
+            if isinstance(m.content, list):
+                text_parts = [p["text"] for p in m.content if p.get("type") == "text"]
+                img_parts  = [p["image_url"]["url"].split(",", 1)[-1]
+                               for p in m.content
+                               if p.get("type") == "image_url" and "image_url" in p]
+                # Formato Anthropic-style también soportado
+                if not img_parts:
+                    img_parts = [p["source"]["data"]
+                                 for p in m.content
+                                 if p.get("type") == "image" and "source" in p]
+                entry: dict = {"role": m.role, "content": " ".join(text_parts)}
+                if img_parts:
+                    entry["images"] = img_parts
+                api_msgs.append(entry)
+            else:
+                api_msgs.append({"role": m.role, "content": m.content})
+
         opts = {"temperature": temperature, "num_predict": max_tokens}
 
         try:

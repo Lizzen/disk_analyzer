@@ -102,6 +102,7 @@ Reglas importantes:
 def build_context(
     scan: ScanResult | None,
     selected_path: str = "",
+    alert_risk: dict | None = None,
 ) -> str:
     """
     Genera el bloque de contexto del scan para incluir en el system prompt.
@@ -199,6 +200,34 @@ def build_context(
                 f"  |  {node.file_count} archivos"
             )
 
+    # ── Alerta de riesgo activa ────────────────────────────────────────────────
+    if alert_risk:
+        severity    = alert_risk.get("severity", "")
+        sev_label   = {"high": "CRÍTICO", "medium": "MODERADO", "low": "BAJO"}.get(severity, severity.upper())
+        risk_type   = alert_risk.get("type", "desconocido")
+        title       = alert_risk.get("title", "")
+        description = alert_risk.get("description", "")
+        size        = alert_risk.get("size", 0)
+        files       = alert_risk.get("files", [])
+
+        lines.append(f"\n[⚠ ALERTA DE RIESGO ACTIVA — ANALIZAR CON PRIORIDAD]")
+        lines.append(f"  Severidad : {sev_label}")
+        lines.append(f"  Tipo      : {risk_type}")
+        lines.append(f"  Título    : {title}")
+        lines.append(f"  Descripción: {description}")
+        if size > 0:
+            lines.append(f"  Espacio afectado: {format_size(size)}")
+        if files:
+            lines.append(f"  Archivos implicados ({len(files)} total, mostrando top {min(10, len(files))}):")
+            for p in files[:10]:
+                lines.append(f"    • {p}")
+            if len(files) > 10:
+                lines.append(f"    • … y {len(files) - 10} más")
+        lines.append(
+            "  INSTRUCCIÓN: El usuario necesita consejo concreto sobre esta alerta. "
+            "Explica el riesgo real, si es un falso positivo o no, y da pasos claros de acción."
+        )
+
     return "\n".join(lines)
 
 
@@ -209,6 +238,7 @@ def build_messages(
     selected_path: str = "",
     image_b64: str | None = None,
     image_mime: str | None = None,
+    alert_risk: dict | None = None,
 ) -> list:
     """
     Construye la lista de mensajes para enviar al LLM.
@@ -219,7 +249,7 @@ def build_messages(
     from chatbot.providers.base import Message
     from chatbot import config
 
-    context = build_context(scan, selected_path)
+    context = build_context(scan, selected_path, alert_risk=alert_risk)
     system  = SYSTEM_PROMPT + context
 
     msgs: list[Message] = [Message(role="system", content=system)]

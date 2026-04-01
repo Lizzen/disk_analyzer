@@ -151,6 +151,14 @@ export default function App() {
   const [chatLoading, setChatLoading]   = useState(false);
   const [chatError, setChatError]       = useState("");
   const [selectedPath, setSelectedPath] = useState("");
+  // Alerta de riesgo activa en el chat (objeto completo del backend)
+  const [pendingRiskAlert, setPendingRiskAlert] = useState(null);
+  const pendingRiskAlertRef                     = useRef(null);
+  // Imagen adjunta al chat: { b64: string, mime: string, preview: string } | null
+  const [attachedImage, setAttachedImage] = useState(null);
+  const [dragOver, setDragOver]           = useState(false);
+  const attachedImageRef                  = useRef(null);
+  const fileInputRef                      = useRef(null);
   const chatBottomRef = useRef(null);
   // Modo agente: indica que la IA ha solicitado un escaneo automático
   const [agentMode, setAgentMode]       = useState(false);
@@ -481,9 +489,10 @@ export default function App() {
   const chatInputRef    = useRef(chatInput);
 
   // Mantener refs sincronizados con el estado
-  useEffect(() => { chatHistoryRef.current  = chatHistory;  }, [chatHistory]);
-  useEffect(() => { providerRef.current     = provider;     }, [provider]);
-  useEffect(() => { selectedPathRef.current = selectedPath; }, [selectedPath]);
+  useEffect(() => { chatHistoryRef.current       = chatHistory;       }, [chatHistory]);
+  useEffect(() => { providerRef.current          = provider;          }, [provider]);
+  useEffect(() => { selectedPathRef.current      = selectedPath;      }, [selectedPath]);
+  useEffect(() => { pendingRiskAlertRef.current  = pendingRiskAlert;  }, [pendingRiskAlert]);
   useEffect(() => { chatInputRef.current    = chatInput;    }, [chatInput]);
 
   // ── Persistencia del historial en localStorage (debounced 500ms) ───────────
@@ -515,6 +524,56 @@ export default function App() {
   const onHoverOut = useCallback(e => { e.currentTarget.style.background = "transparent"; }, []);
   const onHoverInCard  = useCallback(e => { e.currentTarget.style.borderColor = C.accent+"55"; e.currentTarget.style.background = C.bgHover; }, [C.accent, C.bgHover]);
   const onHoverOutCard = useCallback(e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = C.bgCard; }, [C.border, C.bgCard]);
+
+  // ── Imagen adjunta: helpers ───────────────────────────────────────────────────
+  // Tipos MIME aceptados por el backend
+  const ACCEPTED_MIME = ["image/png", "image/jpeg", "image/webp"];
+
+  const _loadImageFile = useCallback((file) => {
+    if (!file || !ACCEPTED_MIME.includes(file.type)) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result;               // data:image/png;base64,XXXX
+      const b64  = dataUrl.split(",")[1];
+      const mime = file.type;
+      const img  = { b64, mime, preview: dataUrl, name: file.name || "imagen" };
+      setAttachedImage(img);
+      attachedImageRef.current = img;
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const handleChatPaste = useCallback((e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.kind === "file" && ACCEPTED_MIME.includes(item.type)) {
+        e.preventDefault();
+        _loadImageFile(item.getAsFile());
+        return;
+      }
+    }
+  }, [_loadImageFile]);
+
+  const handleChatDrop = useCallback((e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) _loadImageFile(file);
+  }, [_loadImageFile]);
+
+  const handleChatDragOver = useCallback((e) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
+
+  const handleChatDragLeave = useCallback(() => setDragOver(false), []);
+
+  const clearAttachedImage = useCallback(() => {
+    setAttachedImage(null);
+    attachedImageRef.current = null;
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
 
   // Refs para parámetros LLM (evitar closure stale)
   const temperatureRef = useRef(temperature);
@@ -559,7 +618,11 @@ export default function App() {
     const msg = (text ?? chatInputRef.current).trim();
     if (!msg || chatLoadingRef.current) return;
     chatLoadingRef.current = true;
+    const imgSnap       = attachedImageRef.current;      // captura antes de limpiar
+    const riskSnap      = pendingRiskAlertRef.current;   // captura alerta activa
     setChatInput(""); setChatError("");
+    clearAttachedImage();
+    setPendingRiskAlert(null); pendingRiskAlertRef.current = null;
     setChatHistory(prev => [...prev, { role:"user", content:msg }, { role:"assistant", content:"", provider: providerRef.current }].slice(-CHAT_MAX_MEMORY));
     setChatLoading(true);
     try {
@@ -570,6 +633,8 @@ export default function App() {
         history:       chatHistoryRef.current.filter(m => m.role !== "system").slice(-20),
         temperature:   temperatureRef.current,
         max_tokens:    maxTokensRef.current,
+        ...(imgSnap   ? { image_b64: imgSnap.b64, image_mime: imgSnap.mime } : {}),
+        ...(riskSnap  ? { alert_risk: riskSnap } : {}),
       };
       const res = await fetch(`${API}/api/chat`, {
         method:"POST", headers:{"Content-Type":"application/json"},
@@ -1455,7 +1520,11 @@ export default function App() {
 
         {/* ── Input ── */}
         <div className="px-3 pt-2 pb-3 shrink-0 border-t glass-panel" style={{  borderColor: C.border }}>
-          {/* Chip de archivo adjunto */}
+          {/* Input file oculto para seleccionar imagen */}
+          <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp"
+                 className="hidden" onChange={e => { _loadImageFile(e.target.files?.[0]); }} />
+
+          {/* Chip de archivo adjunto (ruta seleccionada) */}
           {selectedPath && (
             <div className="flex items-center gap-1.5 mb-2 px-2.5 py-1 rounded-lg"
                  style={{ background:`${C.accent}14`, border:`1px solid ${C.accent}30` }}>
@@ -1470,29 +1539,66 @@ export default function App() {
             </div>
           )}
 
-          {/* Área de texto */}
-          <div className="rounded-xl overflow-hidden"
-               style={{ border:`1.5px solid ${C.borderFocus}`, background: C.bgInput }}>
+          {/* Preview de imagen adjunta */}
+          {attachedImage && (
+            <div className="flex items-center gap-2 mb-2 px-2.5 py-1.5 rounded-lg"
+                 style={{ background:`${C.green}12`, border:`1px solid ${C.green}30` }}>
+              <img src={attachedImage.preview} alt="adjunto"
+                   className="w-10 h-10 object-cover rounded shrink-0"
+                   style={{ border:`1px solid ${C.border}` }} />
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-semibold truncate" style={{ color: C.green }}>
+                  Imagen adjunta
+                </p>
+                <p className="text-[9px] truncate font-mono" style={{ color: C.textMuted }}>
+                  {attachedImage.name} · {attachedImage.mime.split("/")[1].toUpperCase()}
+                </p>
+              </div>
+              <button onClick={clearAttachedImage} style={{ color: C.textMuted }}
+                      className="hover:brightness-150 shrink-0" title="Eliminar imagen">
+                <X size={10}/>
+              </button>
+            </div>
+          )}
+
+          {/* Área de texto con drag-and-drop */}
+          <div className="rounded-xl overflow-hidden transition-all"
+               style={{ border:`1.5px solid ${dragOver ? C.accent : C.borderFocus}`,
+                        background: dragOver ? `${C.accent}0a` : C.bgInput }}
+               onDragOver={handleChatDragOver}
+               onDragLeave={handleChatDragLeave}
+               onDrop={handleChatDrop}>
             <textarea value={chatInput}
                       onChange={e => setChatInput(e.target.value)}
                       onKeyDown={e => { if (e.key==="Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+                      onPaste={handleChatPaste}
                       onFocus={e => e.currentTarget.parentElement.style.borderColor = C.accent}
-                      onBlur={e  => e.currentTarget.parentElement.style.borderColor = C.borderFocus}
+                      onBlur={e  => { if (!dragOver) e.currentTarget.parentElement.style.borderColor = C.borderFocus; }}
                       disabled={chatLoading}
                       rows={2}
-                      placeholder="Pregunta sobre tus archivos…"
+                      placeholder={dragOver ? "Suelta la imagen aquí…" : "Pregunta sobre tus archivos…"}
                       className="w-full text-[11px] px-3 pt-2.5 pb-1 outline-none resize-none bg-transparent"
                       style={{ color: C.textPri, caretColor: C.accent, lineHeight:"1.6" }} />
             {/* Toolbar inferior del input */}
             <div className="flex items-center justify-between px-2 pb-1.5">
               <div className="flex items-center gap-2">
+                {/* Botón adjuntar imagen */}
+                <button onClick={() => fileInputRef.current?.click()}
+                        disabled={chatLoading}
+                        title="Adjuntar imagen (PNG/JPG/WEBP) — también puedes pegar con Ctrl+V o arrastrar"
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] transition-all hover:brightness-125 disabled:opacity-40"
+                        style={{ color: attachedImage ? C.green : C.textMuted,
+                                 background: attachedImage ? `${C.green}15` : "transparent",
+                                 border: `1px solid ${attachedImage ? C.green+"40" : "transparent"}` }}>
+                  <Image size={10}/> {attachedImage ? "✓ imagen" : "imagen"}
+                </button>
                 <span className="text-[9px]" style={{ color: C.textMuted }}>↵ enviar · Shift+↵ línea</span>
               </div>
               <button onClick={() => sendChat()}
-                      disabled={chatLoading || !chatInput.trim()}
+                      disabled={chatLoading || (!chatInput.trim() && !attachedImage)}
                       className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-semibold transition-all hover:brightness-110 disabled:opacity-40"
-                      style={{ background: chatInput.trim() ? C.accent : C.bgCard2,
-                               color: chatInput.trim() ? "white" : C.textMuted }}>
+                      style={{ background: (chatInput.trim() || attachedImage) ? C.accent : C.bgCard2,
+                               color: (chatInput.trim() || attachedImage) ? "white" : C.textMuted }}>
                 {chatLoading
                   ? <><Loader2 size={10} className="animate-spin"/> Enviando</>
                   : <><Send size={10}/> Enviar</>}
@@ -1668,7 +1774,15 @@ export default function App() {
               body: JSON.stringify({ path }),
             });
           }}
-          onAttach={(path) => { setSelectedPath(path); setShowRiskPanel(false); }}
+          onAttach={(alert) => {
+            setSelectedPath(alert.path || "");
+            setPendingRiskAlert(alert);
+            pendingRiskAlertRef.current = alert;
+            // Pre-rellenar el textarea con una pregunta contextualizada
+            const severityLabel = { high: "crítico", medium: "moderado", low: "bajo" }[alert.severity] || alert.severity;
+            setChatInput(`Tengo una alerta de riesgo ${severityLabel}: "${alert.title}". ${alert.description} ¿Qué debo hacer?`);
+            setShowRiskPanel(false);
+          }}
           C={C}
         />
       )}

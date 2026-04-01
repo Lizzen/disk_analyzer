@@ -252,7 +252,7 @@ const RiskAlertsPanel = React.memo(function RiskAlertsPanel({ alerts, onClose, o
                         <ExternalLink size={9}/> Abrir
                       </button>
                     )}
-                    <button onClick={() => onAttach(alert.path)}
+                    <button onClick={() => onAttach(alert)}
                             className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] transition-all hover:brightness-110 shrink-0"
                             style={{ background:`${C.accent}18`, color: C.accentL, border:`1px solid ${C.accent}30` }}>
                       <MessageSquare size={9}/> Preguntar IA

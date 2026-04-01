@@ -72,6 +72,7 @@ class ChatRequest(BaseModel):
     max_tokens:    int           = Field(1024, ge=10, le=8192)
     image_b64:     Optional[str] = Field(None, max_length=5_000_000)  # ~3.7 MB imagen
     image_mime:    Optional[str] = Field(None, pattern=r"^image/(png|jpeg|webp)$")
+    alert_risk:    Optional[dict] = Field(None)  # alerta de riesgo completa del frontend
 
 
 class ConfigRequest(BaseModel):
@@ -378,6 +379,7 @@ async def chat(req: ChatRequest):
         selected_path=req.selected_path,
         image_b64=image_b64,
         image_mime=image_mime,
+        alert_risk=req.alert_risk,
     )
 
     # Streaming en thread aparte (los providers son síncronos)
