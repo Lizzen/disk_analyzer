@@ -73,6 +73,14 @@ def _clear_webview_cache():
                 pass
 
 
+def _base_dir() -> str:
+    """Devuelve el directorio raíz del proyecto, tanto en modo normal como frozen (PyInstaller)."""
+    if getattr(sys, "frozen", False):
+        # PyInstaller: el ejecutable y los datos están en sys._MEIPASS
+        return sys._MEIPASS
+    return os.path.dirname(os.path.abspath(__file__))
+
+
 if __name__ == '__main__':
     _clear_webview_cache()
 
@@ -84,7 +92,7 @@ if __name__ == '__main__':
         print("ERROR: FastAPI no arrancó en 10 segundos", file=sys.stderr)
         sys.exit(1)
 
-    prod_path = os.path.join(os.path.dirname(__file__), "frontend", "dist", "index.html")
+    prod_path = os.path.join(_base_dir(), "frontend", "dist", "index.html")
     url = "http://127.0.0.1:8000" if os.path.exists(prod_path) else "http://localhost:5173"
 
     window = webview.create_window(

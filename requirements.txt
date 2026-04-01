@@ -1,0 +1,23 @@
+# Web framework
+fastapi==0.135.1
+uvicorn[standard]==0.41.0
+
+# AI providers
+anthropic==0.84.0
+google-genai==1.67.0
+groq==1.1.1
+
+# Sistema / monitoreo
+psutil==6.1.1
+httpx==0.28.1
+
+# Almacenamiento seguro de credenciales (Administrador de Credenciales de Windows)
+keyring==25.7.0
+
+# Windows-only (comentar si se instala en otro OS)
+pywebview>=4.0
+pywin32>=308
+
+# Desarrollo / tests / build
+pytest==9.0.2
+pyinstaller==6.19.0

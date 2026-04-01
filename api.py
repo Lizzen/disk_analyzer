@@ -1313,7 +1313,10 @@ def get_processes():
 
 
 # ── Frontend estático (dist/) ──────────────────────────────────────────────────
-_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "dist")
+# En modo frozen (PyInstaller), los datos están en sys._MEIPASS; de lo contrario
+# se usa el directorio del archivo fuente.
+_BASE = sys._MEIPASS if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
+_DIST = os.path.join(_BASE, "frontend", "dist")
 
 if os.path.isdir(_DIST):
     # Servir assets con no-cache para que pywebview siempre cargue la versión nueva
@@ -1344,6 +1347,13 @@ if os.path.isdir(_DIST):
     @app.get("/favicon.svg")
     def serve_favicon():
         f = os.path.join(_DIST, "favicon.svg")
+        if os.path.isfile(f):
+            return FileResponse(f)
+        return Response(status_code=404)
+
+    @app.get("/icons.svg")
+    def serve_icons():
+        f = os.path.join(_DIST, "icons.svg")
         if os.path.isfile(f):
             return FileResponse(f)
         return Response(status_code=404)

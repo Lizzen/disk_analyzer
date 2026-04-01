@@ -32,7 +32,7 @@ logs/
 
 # Compilación / Distribución (si luego usas pyinstaller/cx_Freeze)
 build/
-dist/
+#dist/
 *.spec
 
 # Scripts de debug/fix de un solo uso (nunca commitear)
