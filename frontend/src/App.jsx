@@ -112,6 +112,10 @@ export default function App() {
   // ── Info del sistema ──────────────────────────────────────────────────────────
   const [showSysInfo, setShowSysInfo] = useState(false);
 
+  // ── UI responsive ─────────────────────────────────────────────────────────────
+  const [showMoreMenu, setShowMoreMenu] = useState(false);   // menú "Más" del toolbar
+  const [chatCollapsed, setChatCollapsed] = useState(false); // panel chat colapsado
+
   // ── Limpiador de temporales ───────────────────────────────────────────────────
   const [showTempCleaner, setShowTempCleaner] = useState(false);
 
@@ -736,28 +740,28 @@ export default function App() {
       <div className="flex-1 flex flex-col min-w-0" style={{ minHeight: 0 }}>
 
         {/* ── Toolbar ── */}
-        <header className="h-13 flex items-center px-4 gap-3 shrink-0 border-b glass-surface" style={{  borderColor: C.border }}>
+        <header className="flex items-center px-3 gap-2 shrink-0 border-b glass-surface" style={{ borderColor: C.border, minHeight: 48, flexWrap: "nowrap" }}>
           {/* Logo */}
-          <div className="flex items-center gap-2 shrink-0 pr-3 border-r" style={{ borderColor: C.border }}>
-            <div className="w-7 h-7 rounded-full flex items-center justify-center"
+          <div className="flex items-center gap-2 shrink-0 pr-2 border-r" style={{ borderColor: C.border }}>
+            <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
                  style={{ background: `radial-gradient(circle, ${C.accentL}, ${C.accent})` }}>
               <HardDrive size={14} color="white" />
             </div>
-            <div className="leading-none">
+            <div className="leading-none hidden sm:block">
               <span className="text-sm font-bold" style={{ color: C.textPri }}>Disk</span>
               <span className="text-sm font-medium ml-0.5" style={{ color: C.accentL }}>Analyzer</span>
             </div>
           </div>
 
           {/* Ruta */}
-          <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded min-w-0"
+          <div className="flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded min-w-0"
                style={{ background: C.bgInput, border: `1px solid ${C.border}` }}>
-            <FolderOpen size={15} style={{ color: C.textMuted }} className="shrink-0" />
+            <FolderOpen size={14} style={{ color: C.textMuted }} className="shrink-0" />
             <input type="text" value={targetPath}
                    onChange={e => setTargetPath(e.target.value)}
                    onKeyDown={e => e.key==="Enter" && startScan()}
                    disabled={scanning}
-                   className="flex-1 bg-transparent outline-none text-sm min-w-0"
+                   className="flex-1 bg-transparent outline-none text-xs min-w-0"
                    style={{ color: C.textPri, caretColor: C.accent }}
                    onFocus={e  => e.currentTarget.parentElement.style.borderColor = C.borderFocus}
                    onBlur={e   => e.currentTarget.parentElement.style.borderColor = C.border}
@@ -767,11 +771,12 @@ export default function App() {
           {/* Favoritos */}
           <div className="relative shrink-0">
             <button onClick={() => setShowFavMenu(v => !v)} title="Rutas favoritas"
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-all hover:brightness-110"
+                    className="flex items-center gap-1 px-2 py-1.5 rounded text-xs transition-all hover:brightness-110"
                     style={{ background: favorites.length > 0 ? `${C.amber}18` : C.bgCard,
                              color: favorites.length > 0 ? C.amber : C.textMuted,
                              border:`1px solid ${favorites.length > 0 ? C.amber+"44" : C.border}` }}>
-              <Star size={12} fill={favorites.length > 0 ? "currentColor" : "none"}/> {favorites.length > 0 && favorites.length}
+              <Star size={12} fill={favorites.length > 0 ? "currentColor" : "none"}/>
+              {favorites.length > 0 && <span className="hidden md:inline">{favorites.length}</span>}
             </button>
             {showFavMenu && (
               <>
@@ -823,41 +828,25 @@ export default function App() {
             )}
           </div>
 
-          {/* Historial de escaneos */}
-          <button onClick={() => setShowHistory(true)} title="Historial de escaneos"
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-all hover:brightness-110 shrink-0"
-                  style={{ background: scanHistory.length > 0 ? `${C.cyan}18` : C.bgCard,
-                           color: scanHistory.length > 0 ? C.cyan : C.textMuted,
-                           border:`1px solid ${scanHistory.length > 0 ? C.cyan+"44" : C.border}` }}>
-            <History size={12}/> {scanHistory.length > 0 && scanHistory.length}
-          </button>
-
-          {/* Comparador de carpetas */}
-          {Object.keys(folders).length > 1 && (
-            <button onClick={() => setShowCompare(true)} title="Comparar carpetas"
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-all hover:brightness-110 shrink-0"
-                    style={{ background:`${C.purple}18`, color: C.purple, border:`1px solid ${C.purple}44` }}>
-              <GitCompare size={12}/>
-            </button>
-          )}
-
-          {/* Botón alertas de riesgo */}
+          {/* Alertas de riesgo — siempre visible si hay */}
           {riskAlerts.length > 0 && (
             <button onClick={() => setShowRiskPanel(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs shrink-0 transition-all hover:brightness-110"
+                    className="flex items-center gap-1 px-2 py-1.5 rounded text-xs shrink-0 transition-all hover:brightness-110"
                     style={{ background:`${riskAlerts.some(a=>a.severity==="high") ? C.red : C.amber}22`,
                              color: riskAlerts.some(a=>a.severity==="high") ? C.red : C.amber,
                              border:`1px solid ${riskAlerts.some(a=>a.severity==="high") ? C.red : C.amber}44` }}>
-              <Bell size={12}/> {riskAlerts.length} riesgo{riskAlerts.length > 1 ? "s" : ""}
+              <Bell size={12}/> <span className="hidden sm:inline">{riskAlerts.length} riesgo{riskAlerts.length > 1 ? "s" : ""}</span>
+              <span className="sm:hidden">{riskAlerts.length}</span>
             </button>
           )}
 
-          {/* Botón Duplicados */}
+          {/* Duplicados — siempre visible si hay */}
           {duplicates.length > 0 && (
             <button onClick={() => setShowDups(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs shrink-0 transition-all hover:brightness-110"
+                    className="flex items-center gap-1 px-2 py-1.5 rounded text-xs shrink-0 transition-all hover:brightness-110"
                     style={{ background:`${C.amber}22`, color:C.amber, border:`1px solid ${C.amber}44` }}>
-              <AlertTriangle size={12} /> {duplicates.length} duplicados
+              <AlertTriangle size={12} /> <span className="hidden sm:inline">{duplicates.length} dup.</span>
+              <span className="sm:hidden">{duplicates.length}</span>
             </button>
           )}
 
@@ -871,121 +860,169 @@ export default function App() {
               { id:"barchart", Icon: BarChart2,   title:"Barras"   },
             ].map(({ id, Icon: VIcon, title }) => (
               <button key={id} onClick={() => setViewMode(id)} title={title}
-                      className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] transition-all"
+                      className="flex items-center gap-1 px-2 py-1.5 text-[10px] transition-all"
                       style={{
                         background: viewMode===id ? `${C.accent}30` : C.bgCard,
                         color:      viewMode===id ? C.accentL : C.textMuted,
-                        borderRight: id!=="timeline" ? `1px solid ${C.border}` : undefined,
+                        borderRight: id!=="barchart" ? `1px solid ${C.border}` : undefined,
                       }}>
-                <VIcon size={12}/> {title}
+                <VIcon size={12}/>
+                <span className="hidden lg:inline">{title}</span>
               </button>
             ))}
           </div>
 
-          {/* Info del sistema */}
-          <button onClick={() => setShowSysInfo(true)} title="Información del sistema"
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-all hover:brightness-110 shrink-0"
-                  style={{ background:`${C.accent}18`, color: C.accentL, border:`1px solid ${C.accent}44` }}>
-            <Cpu size={12}/> Sistema
-          </button>
+          {/* ── Menú "Más" — agrupa herramientas secundarias ── */}
+          <div className="relative shrink-0">
+            <button onClick={() => setShowMoreMenu(v => !v)} title="Más opciones"
+                    className="flex items-center gap-1 px-2 py-1.5 rounded text-xs transition-all hover:brightness-110"
+                    style={{ background: showMoreMenu ? `${C.accent}22` : C.bgCard,
+                             color: showMoreMenu ? C.accentL : C.textMuted,
+                             border:`1px solid ${showMoreMenu ? C.accent+"55" : C.border}` }}>
+              <Sliders size={13}/>
+            </button>
+            {showMoreMenu && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setShowMoreMenu(false)}/>
+                <div className="absolute right-0 top-full mt-1 rounded-xl overflow-hidden shadow-2xl z-40 min-w-[180px]"
+                     style={{ background: C.bgCard2, border:`1px solid ${C.border}` }}>
+                  <div className="px-3 py-2 border-b text-[9px] font-bold tracking-widest"
+                       style={{ borderColor: C.border, color: C.textMuted }}>HERRAMIENTAS</div>
 
-          {/* Limpiador de temporales */}
-          <button onClick={() => setShowTempCleaner(true)} title="Limpiar archivos temporales"
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-all hover:brightness-110 shrink-0"
-                  style={{ background:`${C.amber}18`, color: C.amber, border:`1px solid ${C.amber}44` }}>
-            <Trash2 size={12}/> Temp
-          </button>
-
-          {/* Exportar — solo cuando hay datos */}
-          {allFiles.length > 0 && (
-            <div className="relative shrink-0 group">
-              <button className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs transition-all hover:brightness-110"
-                      style={{ background:`${C.green}18`, color: C.green, border:`1px solid ${C.green}35` }}>
-                <Download size={12}/> Exportar
-              </button>
-              {/* Dropdown */}
-              <div className="absolute right-0 top-full mt-1 rounded-lg overflow-hidden shadow-xl z-30 hidden group-hover:flex flex-col"
-                   style={{ background: C.bgCard2, border:`1px solid ${C.border}`, minWidth: 130 }}>
-                {[["CSV","csv"],["JSON","json"],["HTML","html"]].map(([label, fmt]) => (
-                  <button key={fmt}
-                          onClick={async () => {
-                            const r = await fetch(`${API}/api/export`, {
-                              method:"POST", headers:{"Content-Type":"application/json"},
-                              body: JSON.stringify({ format: fmt, limit: 10000 }),
-                            });
-                            if (!r.ok) return;
-                            const blob = await r.blob();
-                            const url  = URL.createObjectURL(blob);
-                            const a    = document.createElement("a");
-                            a.href = url; a.download = `scan_export.${fmt}`; a.click();
-                            URL.revokeObjectURL(url);
-                          }}
-                          className="flex items-center gap-2 px-3 py-2 text-xs text-left transition-all hover:brightness-125"
-                          style={{ color: C.textPri }}
+                  {/* Historial */}
+                  <button onClick={() => { setShowHistory(true); setShowMoreMenu(false); }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-all hover:brightness-125"
+                          style={{ color: scanHistory.length > 0 ? C.cyan : C.textSec }}
                           onMouseEnter={onHoverIn} onMouseLeave={onHoverOut}>
-                    <Download size={11}/> {label}
+                    <History size={13}/> Historial
+                    {scanHistory.length > 0 && <span className="ml-auto text-[10px] font-bold">{scanHistory.length}</span>}
                   </button>
-                ))}
-              </div>
-            </div>
-          )}
+
+                  {/* Comparador */}
+                  {Object.keys(folders).length > 1 && (
+                    <button onClick={() => { setShowCompare(true); setShowMoreMenu(false); }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-all hover:brightness-125"
+                            style={{ color: C.purple }}
+                            onMouseEnter={onHoverIn} onMouseLeave={onHoverOut}>
+                      <GitCompare size={13}/> Comparar carpetas
+                    </button>
+                  )}
+
+                  {/* Info del sistema */}
+                  <button onClick={() => { setShowSysInfo(true); setShowMoreMenu(false); }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-all hover:brightness-125"
+                          style={{ color: C.textSec }}
+                          onMouseEnter={onHoverIn} onMouseLeave={onHoverOut}>
+                    <Cpu size={13}/> Info del sistema
+                  </button>
+
+                  {/* Limpiador temporales */}
+                  <button onClick={() => { setShowTempCleaner(true); setShowMoreMenu(false); }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-all hover:brightness-125"
+                          style={{ color: C.amber }}
+                          onMouseEnter={onHoverIn} onMouseLeave={onHoverOut}>
+                    <Trash2 size={13}/> Temp. cleaner
+                  </button>
+
+                  {/* Exportar */}
+                  {allFiles.length > 0 && (
+                    <>
+                      <div className="h-px mx-3" style={{ background: C.border }}/>
+                      <div className="px-3 py-1.5 text-[9px] font-bold tracking-widest" style={{ color: C.textMuted }}>EXPORTAR</div>
+                      {[["CSV","csv"],["JSON","json"],["HTML","html"]].map(([label, fmt]) => (
+                        <button key={fmt}
+                                onClick={async () => {
+                                  setShowMoreMenu(false);
+                                  const r = await fetch(`${API}/api/export`, {
+                                    method:"POST", headers:{"Content-Type":"application/json"},
+                                    body: JSON.stringify({ format: fmt, limit: 10000 }),
+                                  });
+                                  if (!r.ok) return;
+                                  const blob = await r.blob();
+                                  const url  = URL.createObjectURL(blob);
+                                  const a    = document.createElement("a");
+                                  a.href = url; a.download = `scan_export.${fmt}`; a.click();
+                                  URL.revokeObjectURL(url);
+                                }}
+                                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-all hover:brightness-125"
+                                style={{ color: C.green }}
+                                onMouseEnter={onHoverIn} onMouseLeave={onHoverOut}>
+                          <Download size={13}/> {label}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Botón Escanear / Cancelar */}
           {!scanning ? (
             <button onClick={() => startScan()}
-                    className="flex items-center gap-2 px-4 py-1.5 rounded text-sm font-semibold shrink-0 transition-all duration-150 hover:brightness-110 active:scale-95"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold shrink-0 transition-all duration-150 hover:brightness-110 active:scale-95"
                     style={{ background: C.accent, color:"white" }}>
-              <Play size={13} fill="currentColor" /> Escanear
+              <Play size={12} fill="currentColor" />
+              <span className="hidden sm:inline">Escanear</span>
             </button>
           ) : (
             <button onClick={cancelScan}
-                    className="flex items-center gap-2 px-4 py-1.5 rounded text-sm font-semibold shrink-0 transition-all duration-150 hover:brightness-110 active:scale-95"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold shrink-0 transition-all duration-150 hover:brightness-110 active:scale-95"
                     style={{ background: C.bgCard2, color: C.red, border:`1px solid ${C.border}` }}>
-              <Square size={13} fill="currentColor" /> Cancelar
+              <Square size={12} fill="currentColor" />
+              <span className="hidden sm:inline">Cancelar</span>
             </button>
           )}
+
+          {/* Toggle chat panel */}
+          <button onClick={() => setChatCollapsed(v => !v)} title={chatCollapsed ? "Mostrar chat" : "Ocultar chat"}
+                  className="flex items-center justify-center p-1.5 rounded shrink-0 transition-all hover:brightness-110"
+                  style={{ background: chatCollapsed ? `${C.accent}22` : C.bgCard,
+                           color: chatCollapsed ? C.accentL : C.textMuted,
+                           border:`1px solid ${chatCollapsed ? C.accent+"44" : C.border}` }}>
+            <MessageSquare size={13}/>
+          </button>
         </header>
 
         {/* ── DiskBar ── */}
-        <div className="px-4 py-2.5 flex items-center gap-5 shrink-0 border-b glass-surface" style={{  borderColor: C.border }}>
-          {/* Donut simplificado */}
-          <div className="relative w-12 h-12 shrink-0">
+        <div className="px-3 py-2 flex items-center gap-3 shrink-0 border-b glass-surface" style={{ borderColor: C.border }}>
+          {/* Donut */}
+          <div className="relative w-10 h-10 shrink-0">
             <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
-              <circle cx="18" cy="18" r="15" fill="none" strokeWidth="4"
-                      stroke={C.diskTrack} />
+              <circle cx="18" cy="18" r="15" fill="none" strokeWidth="4" stroke={C.diskTrack} />
               <circle cx="18" cy="18" r="15" fill="none" strokeWidth="4"
                       stroke={diskClr}
                       strokeDasharray={`${diskPct * 94.2 / 100} 94.2`}
                       style={{ transition:"stroke-dasharray 0.6s ease" }} />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-[10px] font-bold" style={{ color: diskClr }}>{diskPct}%</span>
+              <span className="text-[9px] font-bold" style={{ color: diskClr }}>{diskPct}%</span>
             </div>
           </div>
 
           {/* Barra horizontal */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-1 text-[10px]" style={{ color: C.textMuted }}>
-              <span style={{ color: diskClr }} className="font-semibold">{diskInfo?.path?.replace(/\//g,"\\") || targetPath}</span>
-              <span>{fmtSize(diskInfo?.free)} libres de {fmtSize(diskInfo?.total)}</span>
+              <span style={{ color: diskClr }} className="font-semibold truncate max-w-[40%]">{diskInfo?.path?.replace(/\//g,"\\") || targetPath}</span>
+              <span className="shrink-0">{fmtSize(diskInfo?.free)} libres de {fmtSize(diskInfo?.total)}</span>
             </div>
-            <div className="h-2 rounded-full overflow-hidden" style={{ background: C.diskTrack }}>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: C.diskTrack }}>
               <div className="h-full rounded-full transition-all duration-700"
                    style={{ width:`${diskPct}%`, background: diskClr }} />
             </div>
           </div>
 
-          {/* Cards */}
-          <div className="flex gap-3 shrink-0">
+          {/* Cards — ocultas en pantallas muy pequeñas */}
+          <div className="hidden sm:flex gap-2 shrink-0">
             {[
-              { label:"USADO",  val: fmtSize(diskInfo?.used),  clr: C.textPri },
-              { label:"LIBRE",  val: fmtSize(diskInfo?.free),  clr: diskClr   },
-              { label:"TOTAL",  val: fmtSize(diskInfo?.total), clr: C.textSec },
+              { label:"USADO", val: fmtSize(diskInfo?.used),  clr: C.textPri },
+              { label:"LIBRE", val: fmtSize(diskInfo?.free),  clr: diskClr   },
+              { label:"TOTAL", val: fmtSize(diskInfo?.total), clr: C.textSec },
             ].map(({ label, val, clr }) => (
-              <div key={label} className="flex flex-col items-center px-3 py-1 rounded"
+              <div key={label} className="flex flex-col items-center px-2 py-1 rounded"
                    style={{ background: C.bgCard, border:`1px solid ${C.border}` }}>
                 <span className="text-[9px] font-bold mb-0.5" style={{ color: C.textMuted }}>{label}</span>
-                <span className="text-sm font-bold font-mono" style={{ color: clr }}>{val}</span>
+                <span className="text-xs font-bold font-mono" style={{ color: clr }}>{val}</span>
               </div>
             ))}
           </div>
@@ -1037,17 +1074,17 @@ export default function App() {
         )}
 
         {/* ── Filter Bar ── */}
-        <div className="flex items-center gap-2 px-3 py-1.5 shrink-0 border-b overflow-x-auto glass-panel" style={{  borderColor: C.border }}>
+        <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 shrink-0 border-b glass-panel" style={{ borderColor: C.border }}>
           {/* Pills de categoría */}
           <button onClick={() => setActiveCategory("")}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] shrink-0 transition-all"
+                  className="flex items-center gap-1 px-2 py-1 rounded text-[11px] shrink-0 transition-all"
                   style={{
                     background: activeCategory==="" ? `${C.accent}28` : C.bgCard,
                     color:      activeCategory==="" ? C.accentL : C.textSec,
                     border:     `1px solid ${activeCategory==="" ? C.accent+"66" : C.border}`,
                     fontWeight: activeCategory==="" ? 700 : 400,
                   }}>
-            <BarChart2 size={11} /> Todos
+            <BarChart2 size={11} /> <span className="hidden sm:inline">Todos</span>
           </button>
 
           {CATEGORIES.map(cat => {
@@ -1057,19 +1094,21 @@ export default function App() {
             return (
               <button key={cat}
                       onClick={() => setActiveCategory(active ? "" : cat)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] shrink-0 transition-all"
+                      title={cat}
+                      className="flex items-center gap-1 px-2 py-1 rounded text-[11px] shrink-0 transition-all"
                       style={{
                         background: active ? `${clr}22` : C.bgCard,
                         color:      active ? clr : C.textSec,
                         border:     `1px solid ${active ? clr+"55" : C.border}`,
                         fontWeight: active ? 700 : 400,
                       }}>
-                <Icon size={11} /> {cat.split(" ")[0].split("/")[0]}
+                <Icon size={11} />
+                <span className="hidden md:inline">{cat.split(" ")[0].split("/")[0]}</span>
               </button>
             );
           })}
 
-          <div className="h-4 w-px mx-1 shrink-0" style={{ background: C.border }} />
+          <div className="h-4 w-px mx-0.5 shrink-0" style={{ background: C.border }} />
 
           {/* Size filter */}
           <select value={sizeFilter} onChange={e => setSizeFilter(Number(e.target.value))}
@@ -1082,27 +1121,25 @@ export default function App() {
 
           {/* Filtro por último acceso */}
           <select value={atimeFilter} onChange={e => setAtimeFilter(Number(e.target.value))}
-                  title="Filtrar por último acceso (atime — puede no estar actualizado en Windows)"
+                  title="Filtrar por último acceso"
                   className="text-[11px] px-2 py-1 rounded outline-none shrink-0"
                   style={{ background: atimeFilter > 0 ? `${C.purple}20` : C.bgCard,
                            color: atimeFilter > 0 ? C.purple : C.textSec,
                            border:`1px solid ${atimeFilter > 0 ? C.purple : C.border}` }}>
             <option value={0}>Cualquier acceso</option>
-            <option value={15552000}>No accedido en 6 meses</option>
-            <option value={31536000}>No accedido en 1 año</option>
-            <option value={63072000}>No accedido en 2 años</option>
+            <option value={15552000}>Sin acceso &gt;6m</option>
+            <option value={31536000}>Sin acceso &gt;1a</option>
+            <option value={63072000}>Sin acceso &gt;2a</option>
           </select>
 
-          <div className="flex-1" />
-
-          {/* Búsqueda */}
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded shrink-0"
+          {/* Búsqueda — empuja al final */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded ml-auto shrink-0"
                style={{ background: C.bgInput, border:`1px solid ${C.border}` }}>
             <Search size={12} style={{ color: C.textMuted }} />
             <input type="text" value={nameFilter}
                    onChange={e => setNameFilter(e.target.value)}
-                   placeholder="Filtrar nombre…"
-                   className="bg-transparent outline-none text-[11px] w-36"
+                   placeholder="Filtrar…"
+                   className="bg-transparent outline-none text-[11px] w-24 sm:w-32"
                    style={{ color: C.textPri }} />
             {nameFilter && (
               <X size={12} className="cursor-pointer hover:opacity-80"
@@ -1140,7 +1177,7 @@ export default function App() {
           {viewMode === "table" && <>
 
           {/* ── Tree Panel ── */}
-          <div className="w-56 xl:w-64 flex flex-col shrink-0 border-r overflow-hidden glass-panel" style={{  borderColor: C.border }}>
+          <div className="w-44 md:w-52 xl:w-60 flex flex-col shrink-0 border-r overflow-hidden glass-panel" style={{ borderColor: C.border }}>
             <div className="flex items-center justify-between px-3 py-2 border-b text-[10px] font-bold tracking-widest"
                  style={{ color: C.textMuted, borderColor: C.border }}>
               <span className="flex items-center gap-1"><Folder size={11}/> CARPETAS</span>
@@ -1213,17 +1250,17 @@ export default function App() {
           {/* ── File Table ── */}
           <div className="flex-1 flex flex-col overflow-hidden glass-panel" style={{  minHeight: 0 }}>
             {/* Cabecera de columnas */}
-            <div className="grid gap-2 px-3 py-2 border-b text-[10px] font-bold tracking-widest shrink-0 select-none glass-surface" style={{ borderColor: C.border,  gridTemplateColumns:"1fr 90px 130px 55px 1fr" }}>
+            <div className="grid gap-2 px-3 py-2 border-b text-[10px] font-bold tracking-widest shrink-0 select-none glass-surface file-table-grid" style={{ borderColor: C.border }}>
               {[
-                { col:"name",      label:"NOMBRE"    },
-                { col:"size",      label:"TAMAÑO",    right:true },
-                { col:"category",  label:"CATEGORÍA" },
-                { col:"extension", label:"EXT",       center:true },
-                { col:"path",      label:"RUTA"       },
-              ].map(({ col, label, right, center }) => (
+                { col:"name",      label:"NOMBRE"                    },
+                { col:"size",      label:"TAMAÑO",    right:true     },
+                { col:"category",  label:"CATEGORÍA", hideSm:true    },
+                { col:"extension", label:"EXT",       center:true    },
+                { col:"path",      label:"RUTA",      hideMd:true    },
+              ].map(({ col, label, right, center, hideSm, hideMd }) => (
                 <button key={col}
                         onClick={() => handleSort(col)}
-                        className="flex items-center gap-0.5 hover:opacity-80 transition-opacity cursor-pointer"
+                        className={`flex items-center gap-0.5 hover:opacity-80 transition-opacity cursor-pointer${hideSm ? " hidden sm:flex" : ""}${hideMd ? " hidden md:flex" : ""}`}
                         style={{
                           color: sortCol===col ? C.accentL : C.textMuted,
                           justifyContent: right?"flex-end" : center?"center" : "flex-start",
@@ -1287,7 +1324,8 @@ export default function App() {
       {/* ════════════════════════════════════════════════════════
           PANEL DE CHAT
       ════════════════════════════════════════════════════════ */}
-      <div className="w-72 xl:w-80 flex flex-col shrink-0 border-l glass-panel" style={{  borderColor: C.border }}>
+      <div className={`flex flex-col shrink-0 border-l glass-panel transition-all duration-300 ${chatCollapsed ? "w-0 overflow-hidden border-l-0" : "w-64 md:w-72 xl:w-80"}`}
+           style={{ borderColor: C.border }}>
 
         {/* ── Header ── */}
         <div className="shrink-0 border-b glass-surface" style={{  borderColor: C.border }}>

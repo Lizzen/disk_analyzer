@@ -15,6 +15,13 @@ body {
   color: var(--color-text);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   overflow: hidden;
+  min-width: 0;
+}
+
+/* Previene overflow horizontal en toda la app */
+*, *::before, *::after {
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .font-mono {
@@ -71,6 +78,25 @@ body {
 @keyframes toastIn {
   from { opacity: 0; transform: translateY(8px) scale(0.96); }
   to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+
+/* File table responsive grid */
+.file-table-grid {
+  display: grid;
+  grid-template-columns: 1fr 80px 55px;
+}
+.file-table-row {
+  display: grid;
+}
+@media (min-width: 640px) {
+  .file-table-grid {
+    grid-template-columns: 1fr 80px 110px 55px;
+  }
+}
+@media (min-width: 768px) {
+  .file-table-grid {
+    grid-template-columns: 1fr 90px 130px 55px 1fr;
+  }
 }
 
 /* Scrollbar */

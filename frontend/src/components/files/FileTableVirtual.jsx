@@ -32,24 +32,23 @@ const FileRow = memo(({ index, style, data }) => {
     <div onClick={() => setSelectedPath(file.path)}
          onContextMenu={handleCtx}
          onDoubleClick={() => navigator.clipboard?.writeText(file.path)}
-         className="grid gap-2 px-3 text-xs cursor-pointer transition-all duration-200 hover:scale-[1.002] hover:z-10 hover:shadow-md border-transparent hover:border-[--border]/50"
+         className="file-table-grid file-table-row px-3 text-xs cursor-pointer transition-colors border-transparent"
          onMouseEnter={e => { if (!sel) e.currentTarget.style.background = C.bgHover; }}
          onMouseLeave={e => { if (!sel) e.currentTarget.style.background = rowBg; }}
          style={{ ...style, background: rowBg, borderBottom: `1px solid ${C.border}44`,
-                  gridTemplateColumns:"1fr 90px 130px 55px 1fr", alignItems:"center",
-                  display:"grid", gap:"0.5rem", padding:"0 0.75rem" }}>
-      <div className="flex items-center gap-2 truncate">
+                  alignItems:"center", gap:"0.5rem", padding:"0 0.75rem" }}>
+      <div className="flex items-center gap-2 truncate min-w-0">
         <Icon size={13} style={{ color: clr }} className="shrink-0" />
         <span className="truncate" style={{ color: sel ? C.accentL : C.textPri }}>{file.name}</span>
         {file.is_cache && (
-          <span className="shrink-0 text-[9px] px-1 rounded"
+          <span className="shrink-0 text-[9px] px-1 rounded hidden sm:inline"
                 style={{ background: C.tagCacheBg, color: C.tagCacheFg }}>cache</span>
         )}
       </div>
-      <div className="text-right font-mono" style={{ color: sizeClr }}>{fmtSize(file.size)}</div>
-      <div className="truncate" style={{ color: clr }}>{file.category}</div>
-      <div className="text-center font-mono truncate" style={{ color: C.textMuted }}>{file.extension}</div>
-      <div className="truncate font-mono text-[10px]" style={{ color: C.textMuted }}>{file.path}</div>
+      <div className="text-right font-mono shrink-0" style={{ color: sizeClr }}>{fmtSize(file.size)}</div>
+      <div className="truncate hidden sm:block" style={{ color: clr }}>{file.category}</div>
+      <div className="text-center font-mono truncate shrink-0" style={{ color: C.textMuted }}>{file.extension}</div>
+      <div className="truncate font-mono text-[10px] hidden md:block" style={{ color: C.textMuted }}>{file.path}</div>
     </div>
   );
 }, (prev, next) => {
