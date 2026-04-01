@@ -4,11 +4,17 @@ import mermaid from "mermaid";
 import { WIN_PATH_RE } from "../../utils/constants";
 // ── MermaidLightbox: overlay de diagrama ampliado ────────────────────────────
 function MermaidLightbox({ svg, onClose }) {
+  const svgRef = useRef(null);
   useEffect(() => {
     const onKey = e => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  useEffect(() => {
+    if (svgRef.current && svg) {
+      svgRef.current.innerHTML = svg;
+    }
+  }, [svg]);
   return (
     <div onClick={onClose}
          style={{ position:"fixed", inset:0, zIndex:9999, background:"rgba(0,0,0,0.85)",
@@ -20,7 +26,7 @@ function MermaidLightbox({ svg, onClose }) {
         <button onClick={onClose}
                 style={{ position:"absolute", top:10, right:12, background:"none", border:"none",
                          color:"#a5b4fc", fontSize:20, cursor:"pointer", lineHeight:1 }}>✕</button>
-        <div dangerouslySetInnerHTML={{ __html: svg }}
+        <div ref={svgRef}
              style={{ minWidth:"400px", display:"flex", justifyContent:"center" }} />
       </div>
     </div>
@@ -31,7 +37,7 @@ function MermaidLightbox({ svg, onClose }) {
 let _mermaidReady = false;
 function ensureMermaid() {
   if (_mermaidReady) return;
-  mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "loose",
+  mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "strict",
     themeVariables: { primaryColor: "#6366f1", primaryTextColor: "#e2e8f0",
       primaryBorderColor: "#4f46e5", lineColor: "#818cf8", background: "#0f0f1a",
       mainBkg: "#1a1a2e", nodeBorder: "#4f46e5", clusterBkg: "#1a1a2e",

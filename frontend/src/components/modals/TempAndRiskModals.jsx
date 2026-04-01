@@ -11,6 +11,7 @@ const TempCleanerModal = React.memo(function TempCleanerModal({ onClose, C }) {
   const [selected, setSelected]   = useState(new Set());
   const [cleaning, setCleaning]   = useState(false);
   const [done,     setDone]       = useState(null); // { deleted, errors }
+  const [cleanError, setCleanError] = useState(null);
 
   useEffect(() => {
     fetch(`${API}/api/temp-files`)
@@ -50,6 +51,7 @@ const TempCleanerModal = React.memo(function TempCleanerModal({ onClose, C }) {
   const clean = async (mode) => {
     if (!selected.size) return;
     setCleaning(true);
+    setCleanError(null);
     try {
       const r = await fetch(`${API}/api/temp-clean`, {
         method:"POST", headers:{"Content-Type":"application/json"},
@@ -66,8 +68,9 @@ const TempCleanerModal = React.memo(function TempCleanerModal({ onClose, C }) {
         total_size: g.files.filter(f => !deletedSet.has(normPath(f.path))).reduce((s,f) => s+f.size, 0),
       })).filter(g => g.files.length > 0));
       setSelected(new Set());
-    } catch {}
-    finally { setCleaning(false); }
+    } catch (err) {
+      setCleanError(err?.message || "Error de red al limpiar archivos.");
+    } finally { setCleaning(false); }
   };
 
   return (
@@ -155,6 +158,13 @@ const TempCleanerModal = React.memo(function TempCleanerModal({ onClose, C }) {
               <p className="text-xs font-semibold" style={{ color: C.green }}>
                 ✓ {done.deleted?.length || 0} archivos eliminados
                 {done.errors?.length > 0 && <span style={{ color: C.amber }}> · {done.errors.length} errores</span>}
+              </p>
+            </div>
+          )}
+          {cleanError && (
+            <div className="rounded-xl p-3" style={{ background:`${C.red}10`, border:`1px solid ${C.red}30` }}>
+              <p className="text-xs font-semibold" style={{ color: C.red }}>
+                ✗ {cleanError}
               </p>
             </div>
           )}

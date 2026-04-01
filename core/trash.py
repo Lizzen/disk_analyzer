@@ -19,6 +19,13 @@ def send_to_recycle_bin(path: str) -> Tuple[bool, str]:
     if not os.path.exists(path):
         return False, f"Ruta no encontrada: {path}"
 
+    # Guardia contra traversal por symlink: si el path es un enlace simbólico
+    # cuyo destino real es una ruta protegida del sistema, rechazar la operación.
+    if os.path.islink(path):
+        resolved = os.path.realpath(path)
+        if _is_protected(resolved):
+            return False, f"Enlace simbólico apunta a ruta protegida: {resolved}"
+
     # Intento 1: pywin32
     try:
         from win32com.shell import shell, shellcon
@@ -143,6 +150,12 @@ def delete_permanently(path: str, trusted: bool = False) -> Tuple[bool, str]:
     """
     if not os.path.exists(path):
         return False, f"Ruta no encontrada: {path}"
+
+    # Guardia contra traversal por symlink
+    if os.path.islink(path):
+        resolved = os.path.realpath(path)
+        if _is_protected(resolved):
+            return False, f"Enlace simbólico apunta a ruta protegida: {resolved}"
 
     # Protección: rechazar rutas críticas del sistema (omitir si la ruta es de confianza)
     if not trusted and _is_protected(path):

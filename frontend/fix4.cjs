@@ -1,1 +1,0 @@
-const fs=require("fs"); let c=fs.readFileSync("src/components/modals/SettingsModal.jsx","utf8"); c=c.replace(/style={{\s*2,\s*/g, "style={{ "); fs.writeFileSync("src/components/modals/SettingsModal.jsx",c); console.log("Done");

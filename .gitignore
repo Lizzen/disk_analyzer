@@ -34,3 +34,19 @@ logs/
 build/
 dist/
 *.spec
+
+# Scripts de debug/fix de un solo uso (nunca commitear)
+check*.js
+check*.cjs
+find*.js
+fix*.js
+fix*.py
+fix*.cjs
+_patch.py
+frontend/fix*.cjs
+generated_themes.json
+modern_debug.log
+
+# Dependencias Node
+node_modules/
+package-lock.json

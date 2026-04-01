@@ -1,1 +1,0 @@
-const fs = require('fs'); const lines = fs.readFileSync('frontend/src/App.jsx', 'utf8').split('\n'); const idx = lines.findIndex(l => l.includes('#1f0a14')); if(idx!==-1) console.log(lines.slice(idx-2, idx+3).join('\n'));
