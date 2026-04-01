@@ -55,7 +55,27 @@ def start_server():
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="critical", access_log=False)
 
 
+def _clear_webview_cache():
+    """Limpia el caché de WebView2 para forzar recarga de assets."""
+    import shutil
+    cache_dirs = []
+    local = os.environ.get("LOCALAPPDATA", "")
+    if local:
+        cache_dirs += [
+            os.path.join(local, "pywebview"),
+            os.path.join(local, "Microsoft", "Edge", "User Data", "Default", "Cache"),
+        ]
+    for d in cache_dirs:
+        if os.path.isdir(d):
+            try:
+                shutil.rmtree(d, ignore_errors=True)
+            except Exception:
+                pass
+
+
 if __name__ == '__main__':
+    _clear_webview_cache()
+
     server_thread = threading.Thread(target=start_server, daemon=True)
     server_thread.start()
 
@@ -65,7 +85,6 @@ if __name__ == '__main__':
         sys.exit(1)
 
     prod_path = os.path.join(os.path.dirname(__file__), "frontend", "dist", "index.html")
-    # Siempre cargar por HTTP para evitar caché de file:// en pywebview
     url = "http://127.0.0.1:8000" if os.path.exists(prod_path) else "http://localhost:5173"
 
     window = webview.create_window(

@@ -1,0 +1,1 @@
+const fs=require("fs"); const c=fs.readFileSync("frontend/src/components/modals/SettingsModal.jsx","utf8").split("\n"); let s = []; c.forEach((l,i)=>{if(l.includes("C.bgSurface")||l.includes("C.bgCard")) s.push(i+": "+l.trim());}); console.log(s.join("\n"));

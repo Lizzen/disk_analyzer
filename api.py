@@ -53,6 +53,10 @@ current_scan_thread:  Optional[threading.Thread] = None
 current_cancel_event: Optional[threading.Event]  = None
 last_scan_result:     Optional[ScanResult]        = None   # persiste el último scan
 
+# Máximo de entradas de archivo guardadas en last_scan_result para el contexto del chat.
+# No afecta al streaming al frontend (que recibe todos los archivos en tiempo real).
+_MAX_RESULT_FILES = 50_000
+
 
 # ── Modelos ────────────────────────────────────────────────────────────────────
 
@@ -268,8 +272,11 @@ async def flush_queue_to_ws(q: queue.Queue, websocket: WebSocket, cancel_event: 
                         elif t == "file_batch":
                             batch_entries = m.get("entries", [])
                             files_sent += len(batch_entries)
-                            # Store raw dicts — avoids 100k Pydantic object constructions
-                            last_scan_result.files.extend(batch_entries)
+                            # Store raw dicts — avoids 100k Pydantic object constructions.
+                            # Limit to _MAX_RESULT_FILES keeping the largest files (useful for chat context).
+                            remaining = _MAX_RESULT_FILES - len(last_scan_result.files)
+                            if remaining > 0:
+                                last_scan_result.files.extend(batch_entries[:remaining])
                         elif t == "heavy_folder":
                             last_scan_result.heavy_folders.append({
                                 "path":   m.get("path", ""),
@@ -901,7 +908,8 @@ def clean_temp_files(req: TempCleanRequest):
             if req.mode == "trash":
                 ok2, err = send_to_recycle_bin(norm)
             else:
-                ok2, err = delete_permanently(norm)
+                # trusted=True: la ruta ya fue validada como perteneciente a un directorio temporal conocido
+                ok2, err = delete_permanently(norm, trusted=True)
             if ok2:
                 deleted.append(norm)
             else:

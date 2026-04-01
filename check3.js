@@ -1,0 +1,1 @@
+const fs=require("fs"); const c=fs.readFileSync("frontend/src/components/modals/SettingsModal.jsx","utf8"); console.log("Panel:", (c.match(/C\.bgPanel/g)||[]).length); console.log("Surface:", (c.match(/C\.bgSurface/g)||[]).length); console.log("Card:", (c.match(/C\.bgCard/g)||[]).length);

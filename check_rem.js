@@ -1,0 +1,1 @@
+const fs=require("fs"); const c=fs.readFileSync("frontend/src/App.jsx","utf8"); console.log("Remaining C.bgPanel:",(c.match(/background:\s*C\.bgPanel/g)||[]).length);console.log("Remaining C.bgSurface:",(c.match(/background:\s*C\.bgSurface/g)||[]).length);

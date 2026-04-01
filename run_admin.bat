@@ -10,4 +10,5 @@ if %errorLevel% == 0 (
 
 :run
 cd /d "%~dp0"
+cd frontend && npm run build && cd ..
 start "" pythonw app_web.py

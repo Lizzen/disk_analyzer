@@ -104,6 +104,7 @@ HEAVY_KNOWN_DIRS: frozenset = frozenset({
 })
 
 DUP_MIN_SIZE    = 1024 * 1024    # 1 MB — mínimo para candidato a duplicado
+DUP_MAX_GROUPS  = 20_000         # máximo de grupos de duplicados por hilo (evita RAM ilimitada)
 BATCH_SIZE      = 500            # archivos por lote antes de poner en queue
 PROGRESS_EVERY  = 2000           # emitir progreso cada N archivos dentro de una carpeta
 
@@ -184,11 +185,14 @@ class DiskScanner:
             for key, paths in local.items():
                 merged[key].extend(paths)
 
-        real_dups = {
-            k: list(dict.fromkeys(v))
-            for k, v in merged.items()
-            if len(set(v)) > 1
-        }
+        # dict.fromkeys preserva orden y deduplica en una pasada (O(n)).
+        # Usamos la misma estructura para el chequeo de longitud, evitando
+        # crear un set adicional con set(v).
+        real_dups = {}
+        for k, v in merged.items():
+            deduped = list(dict.fromkeys(v))
+            if len(deduped) > 1:
+                real_dups[k] = deduped
         log.info("SCAN dup groups after dedup=%d", len(real_dups))
 
         self._q.put({
@@ -335,7 +339,7 @@ class DiskScanner:
                                 folder_files    += 1
                                 files_since_progress += 1
 
-                                if s > DUP_MIN_SIZE:
+                                if s > DUP_MIN_SIZE and len(local_dups) < DUP_MAX_GROUPS:
                                     local_dups[(name.lower(), s)].append(entry.path)
 
                                 # Emitir lote cuando llega al límite
@@ -343,18 +347,16 @@ class DiskScanner:
                                     self._q.put({"type": "file_batch", "entries": batch})
                                     batch = []
 
-                                # Progreso intermedio: dentro de una carpeta grande
+                                # Progreso intermedio: dentro de una carpeta grande.
+                                # Lee sin lock: int reads en CPython son atómicos bajo el GIL.
                                 if files_since_progress >= PROGRESS_EVERY:
                                     files_since_progress = 0
-                                    with self._lock:
-                                        bytes_snap = self._bytes_total + folder_size
-                                        done_snap  = self._done_count
                                     self._q.put({
                                         "type":    "progress",
-                                        "done":    done_snap,
+                                        "done":    self._done_count,
                                         "total":   self._total_top,
                                         "current": dirpath,
-                                        "bytes":   bytes_snap,
+                                        "bytes":   self._bytes_total + folder_size,
                                     })
 
                         except (PermissionError, OSError) as e:
