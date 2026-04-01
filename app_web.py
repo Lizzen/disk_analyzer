@@ -6,6 +6,26 @@ import os
 import socket
 import time
 
+
+def _ensure_admin():
+    """Re-lanza el proceso con permisos de administrador si no los tiene."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+    if ctypes.windll.shell32.IsUserAnAdmin():
+        return  # ya es admin
+    # Usar pythonw.exe para relanzar sin ventana de consola
+    exe = sys.executable
+    if exe.lower().endswith("python.exe"):
+        exe = exe[:-10] + "pythonw.exe"
+    params = " ".join(f'"{a}"' for a in sys.argv)
+    ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, params, None, 1)
+    if ret > 32:
+        sys.exit(0)   # proceso padre cierra; el hijo elevado continúa
+
+
+_ensure_admin()
+
 from api import app
 
 
@@ -24,10 +44,46 @@ def _wait_port(port: int, timeout: float = 10.0) -> bool:
 
 
 def start_server():
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+    import logging
+    # Silenciar todo output de uvicorn/fastapi a la consola
+    logging.getLogger("uvicorn").handlers.clear()
+    logging.getLogger("uvicorn.access").handlers.clear()
+    logging.getLogger("uvicorn.error").handlers.clear()
+    logging.getLogger("uvicorn").propagate = False
+    logging.getLogger("uvicorn.access").propagate = False
+    logging.getLogger("uvicorn.error").propagate = False
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="critical", access_log=False)
+
+
+def _clear_webview_cache():
+    """Limpia el caché de WebView2 para forzar recarga de assets."""
+    import shutil
+    cache_dirs = []
+    local = os.environ.get("LOCALAPPDATA", "")
+    if local:
+        cache_dirs += [
+            os.path.join(local, "pywebview"),
+            os.path.join(local, "Microsoft", "Edge", "User Data", "Default", "Cache"),
+        ]
+    for d in cache_dirs:
+        if os.path.isdir(d):
+            try:
+                shutil.rmtree(d, ignore_errors=True)
+            except Exception:
+                pass
+
+
+def _base_dir() -> str:
+    """Devuelve el directorio raíz del proyecto, tanto en modo normal como frozen (PyInstaller)."""
+    if getattr(sys, "frozen", False):
+        # PyInstaller: el ejecutable y los datos están en sys._MEIPASS
+        return sys._MEIPASS
+    return os.path.dirname(os.path.abspath(__file__))
 
 
 if __name__ == '__main__':
+    _clear_webview_cache()
+
     server_thread = threading.Thread(target=start_server, daemon=True)
     server_thread.start()
 
@@ -36,8 +92,7 @@ if __name__ == '__main__':
         print("ERROR: FastAPI no arrancó en 10 segundos", file=sys.stderr)
         sys.exit(1)
 
-    prod_path = os.path.join(os.path.dirname(__file__), "frontend", "dist", "index.html")
-    # Siempre cargar por HTTP para evitar caché de file:// en pywebview
+    prod_path = os.path.join(_base_dir(), "frontend", "dist", "index.html")
     url = "http://127.0.0.1:8000" if os.path.exists(prod_path) else "http://localhost:5173"
 
     window = webview.create_window(
@@ -48,5 +103,5 @@ if __name__ == '__main__':
         min_size=(800, 600)
     )
 
-    webview.start(debug=True)
+    webview.start(debug=False)
     sys.exit(0)

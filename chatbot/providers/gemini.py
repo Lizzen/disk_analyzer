@@ -60,12 +60,31 @@ class GeminiProvider(AIProvider):
             else:
                 chat_msgs.append(m)
 
+        def _to_parts(content) -> list:
+            """Convierte content (str o lista multipart) a lista de types.Part."""
+            if isinstance(content, str):
+                return [types.Part(text=content)]
+            parts = []
+            for p in content:
+                if p.get("type") == "text":
+                    parts.append(types.Part(text=p["text"]))
+                elif p.get("type") == "image":
+                    import base64
+                    parts.append(types.Part(
+                        inline_data=types.Blob(
+                            mime_type=p["media_type"],
+                            data=base64.b64decode(p["data"]),
+                        )
+                    ))
+            return parts
+
         history = []
         for m in chat_msgs[:-1]:
             role = "user" if m.role == "user" else "model"
-            history.append(types.Content(role=role, parts=[types.Part(text=m.content)]))
+            history.append(types.Content(role=role, parts=_to_parts(m.content)))
 
-        last = chat_msgs[-1].content if chat_msgs else ""
+        last_content = chat_msgs[-1].content if chat_msgs else ""
+        last_parts   = _to_parts(last_content)
 
         config_kwargs: dict = {"temperature": temperature, "max_output_tokens": max_tokens}
         if system_content:
@@ -75,7 +94,7 @@ class GeminiProvider(AIProvider):
             if on_chunk:
                 stream = client.models.generate_content_stream(
                     model=_MODEL,
-                    contents=history + [types.Content(role="user", parts=[types.Part(text=last)])],
+                    contents=history + [types.Content(role="user", parts=last_parts)],
                     config=types.GenerateContentConfig(**config_kwargs),
                 )
                 full = []
@@ -88,7 +107,7 @@ class GeminiProvider(AIProvider):
             else:
                 response = client.models.generate_content(
                     model=_MODEL,
-                    contents=history + [types.Content(role="user", parts=[types.Part(text=last)])],
+                    contents=history + [types.Content(role="user", parts=last_parts)],
                     config=types.GenerateContentConfig(**config_kwargs),
                 )
                 return response.text or ""

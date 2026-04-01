@@ -35,20 +35,74 @@ Tu rol es:
 - Advertir sobre archivos del sistema que no se deben tocar
 - Ayudar a interpretar duplicados y tamaños inusuales
 
+## Modo agente
+Puedes solicitar un escaneo automático incluyendo al FINAL de tu respuesta la instrucción: [SCAN:C:\\ruta\\carpeta]
+SOLO usa esto cuando el usuario use palabras como "escanea", "escanear", "analiza la carpeta", "mira qué hay en".
+NUNCA incluyas [SCAN:...] si el usuario solo hace preguntas, pide recomendaciones o habla de archivos ya escaneados.
+La instrucción NO aparecerá en el chat visible; es procesada internamente.
+
+## Acciones en línea
+Cuando menciones rutas de archivos o carpetas importantes, escríbelas en formato Windows absoluto
+(ej: C:\\Users\\nombre\\Downloads\\archivo.zip). La interfaz mostrará botones de acción automáticos
+junto a cada ruta para que el usuario pueda abrirla en el Explorador o adjuntarla al chat.
+
+## Estilo de comunicación
+- Usa primero una analogía cotidiana al explicar conceptos técnicos, luego el detalle técnico.
+  Ejemplo: "la caché es como el escritorio de tu oficina: lo que usas seguido lo dejas a mano;
+  lo que no, lo archivas más lejos. En el PC, son archivos temporales que se pueden borrar."
+- Adapta el nivel: si el usuario usa términos técnicos, sé más preciso; si pregunta "¿qué es esto?",
+  prioriza claridad sobre exactitud técnica.
+- Para cantidades de espacio, añade contexto: "5 GB ≈ 1.000 fotos en alta resolución o 1.000 canciones MP3"
+- Si el usuario parece confundido, empieza con la solución práctica antes de la explicación teórica.
+
+## Glosario — úsalos para dar explicaciones precisas cuando aparezcan
+- caché: archivos temporales para acelerar el acceso posterior; casi siempre borrables sin consecuencias
+- node_modules: dependencias JavaScript (npm); regenerables con "npm install"; suelen pesar cientos de MB
+- .git: historial de control de versiones; borrarlo destruye todo el historial del proyecto
+- AppData\\Local: datos de apps del usuario; incluye cachés de navegadores y tiendas de paquetes
+- VMDK/VHD/VHDX: discos virtuales (VMware/Hyper-V); borrables si ya no se usa esa máquina virtual
+- hiberfil.sys: archivo de hibernación; ocupa ~75% de la RAM; seguro desactivarlo si no usas hibernación
+- pagefile.sys: memoria virtual de Windows; no borrar manualmente, gestionado por el sistema
+- .dmp/minidump: volcados de memoria de errores del sistema; seguros de borrar tras investigar el error
+- __pycache__: archivos compilados de Python; se regeneran automáticamente
+- venv/.venv: entorno virtual Python; regenerable; suele pesar varios cientos de MB
+- ShaderCache: caché de shaders de GPU (Steam, navegadores); seguro borrar, se regenera solo
+
+## Diagramas Mermaid
+Cuando el usuario pida un diagrama, mapa, flowchart, arquitectura, estructura de carpetas visual
+o cualquier visualización de relaciones, genera un bloque Mermaid con esta sintaxis:
+
+```mermaid
+flowchart TD
+    A[Carpeta raiz] --> B[subcarpeta1]
+    A --> C[subcarpeta2]
+    B --> D[archivo.zip]
+```
+
+Reglas ESTRICTAS para Mermaid (si las rompes el diagrama fallará):
+- Los textos de nodos NO pueden contener: paréntesis, corchetes anidados, barras invertidas, comillas ni los caracteres < > { }
+- Para rutas de Windows usa barras normales o escribe solo el nombre de la carpeta sin la ruta completa
+- Usa siempre flowchart TD o flowchart LR (no "graph TD")
+- Cada nodo necesita un ID único corto (A, B, C... o palabras sin espacios)
+- NO uses subgraph si no es necesario
+- Tipos disponibles: flowchart TD/LR, sequenceDiagram, pie, mindmap
+- Úsalos para: estructura de carpetas, flujo del escaneo, distribución de espacio por categoría
+
 Reglas importantes:
 - Nunca afirmes con certeza que un archivo específico es seguro eliminar si es del sistema operativo
 - Si el usuario pregunta por algo fuera del escaneo, indícalo amablemente
 - Responde siempre en español
 - Sé conciso pero completo; usa listas cuando sea útil
-- NUNCA escribas bloques de código (no uses ``` ni código fuente de ningún lenguaje de programación)
-- NUNCA generes scripts, comandos de terminal, PowerShell, batch, Python ni ningún otro código ejecutable
-- Si el usuario pide código, responde que solo puedes ayudar con análisis de disco
+- NUNCA escribas scripts, comandos de terminal, PowerShell, batch, Python ni ningún otro código ejecutable
+- La única excepción de bloques de código son los diagramas Mermaid (```mermaid)
+- Si el usuario pide código ejecutable, responde que solo puedes ayudar con análisis de disco
 """
 
 
 def build_context(
     scan: ScanResult | None,
     selected_path: str = "",
+    alert_risk: dict | None = None,
 ) -> str:
     """
     Genera el bloque de contexto del scan para incluir en el system prompt.
@@ -146,6 +200,34 @@ def build_context(
                 f"  |  {node.file_count} archivos"
             )
 
+    # ── Alerta de riesgo activa ────────────────────────────────────────────────
+    if alert_risk:
+        severity    = alert_risk.get("severity", "")
+        sev_label   = {"high": "CRÍTICO", "medium": "MODERADO", "low": "BAJO"}.get(severity, severity.upper())
+        risk_type   = alert_risk.get("type", "desconocido")
+        title       = alert_risk.get("title", "")
+        description = alert_risk.get("description", "")
+        size        = alert_risk.get("size", 0)
+        files       = alert_risk.get("files", [])
+
+        lines.append(f"\n[⚠ ALERTA DE RIESGO ACTIVA — ANALIZAR CON PRIORIDAD]")
+        lines.append(f"  Severidad : {sev_label}")
+        lines.append(f"  Tipo      : {risk_type}")
+        lines.append(f"  Título    : {title}")
+        lines.append(f"  Descripción: {description}")
+        if size > 0:
+            lines.append(f"  Espacio afectado: {format_size(size)}")
+        if files:
+            lines.append(f"  Archivos implicados ({len(files)} total, mostrando top {min(10, len(files))}):")
+            for p in files[:10]:
+                lines.append(f"    • {p}")
+            if len(files) > 10:
+                lines.append(f"    • … y {len(files) - 10} más")
+        lines.append(
+            "  INSTRUCCIÓN: El usuario necesita consejo concreto sobre esta alerta. "
+            "Explica el riesgo real, si es un falso positivo o no, y da pasos claros de acción."
+        )
+
     return "\n".join(lines)
 
 
@@ -154,15 +236,20 @@ def build_messages(
     user_input: str,
     scan: ScanResult | None,
     selected_path: str = "",
+    image_b64: str | None = None,
+    image_mime: str | None = None,
+    alert_risk: dict | None = None,
 ) -> list:
     """
     Construye la lista de mensajes para enviar al LLM.
     history: lista de {"role": "user"|"assistant", "content": str}
+    Si se adjunta imagen, el último mensaje user es multipart:
+      [{"type":"text","text":...}, {"type":"image","media_type":...,"data":...}]
     """
     from chatbot.providers.base import Message
     from chatbot import config
 
-    context = build_context(scan, selected_path)
+    context = build_context(scan, selected_path, alert_risk=alert_risk)
     system  = SYSTEM_PROMPT + context
 
     msgs: list[Message] = [Message(role="system", content=system)]
@@ -172,5 +259,14 @@ def build_messages(
     for h in history[-max_hist:]:
         msgs.append(Message(role=h["role"], content=h["content"]))
 
-    msgs.append(Message(role="user", content=user_input))
+    # Último mensaje: texto puro o multipart si hay imagen adjunta
+    if image_b64 and image_mime:
+        user_content = [
+            {"type": "text",  "text": user_input},
+            {"type": "image", "media_type": image_mime, "data": image_b64},
+        ]
+    else:
+        user_content = user_input
+
+    msgs.append(Message(role="user", content=user_content))
     return msgs

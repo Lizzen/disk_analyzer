@@ -95,7 +95,16 @@ CACHE_FOLDER_NAMES: frozenset = frozenset({
     ".next", ".nuxt", "venv", ".venv", "env",
 })
 
+# Carpetas que se ignoran en el escaneo profundo pero cuyo tamaño total se reporta
+HEAVY_KNOWN_DIRS: frozenset = frozenset({
+    "node_modules", "__pycache__", ".git",
+    "venv", ".venv", "env",
+    "ShaderCache",        # Steam/GPU shader cache
+    "shadercache",        # variante minúscula
+})
+
 DUP_MIN_SIZE    = 1024 * 1024    # 1 MB — mínimo para candidato a duplicado
+DUP_MAX_GROUPS  = 20_000         # máximo de grupos de duplicados por hilo (evita RAM ilimitada)
 BATCH_SIZE      = 500            # archivos por lote antes de poner en queue
 PROGRESS_EVERY  = 2000           # emitir progreso cada N archivos dentro de una carpeta
 
@@ -176,11 +185,14 @@ class DiskScanner:
             for key, paths in local.items():
                 merged[key].extend(paths)
 
-        real_dups = {
-            k: list(dict.fromkeys(v))
-            for k, v in merged.items()
-            if len(set(v)) > 1
-        }
+        # dict.fromkeys preserva orden y deduplica en una pasada (O(n)).
+        # Usamos la misma estructura para el chequeo de longitud, evitando
+        # crear un set adicional con set(v).
+        real_dups = {}
+        for k, v in merged.items():
+            deduped = list(dict.fromkeys(v))
+            if len(deduped) > 1:
+                real_dups[k] = deduped
         log.info("SCAN dup groups after dedup=%d", len(real_dups))
 
         self._q.put({
@@ -200,7 +212,19 @@ class DiskScanner:
                 for e in it:
                     try:
                         if _should_ignore(e.name):
-                            log.debug("IGNORE  folder=%s", e.path)
+                            # Si es una carpeta pesada conocida, calcular su tamaño y emitir heavy_folder
+                            if e.is_dir(follow_symlinks=False) and e.name in HEAVY_KNOWN_DIRS:
+                                size = self._quick_dir_size(e.path)
+                                self._q.put({
+                                    "type":  "heavy_folder",
+                                    "path":  e.path,
+                                    "name":  e.name,
+                                    "parent": root_path,
+                                    "size":  size,
+                                })
+                                log.debug("HEAVY_FOLDER  path=%s  size=%d", e.path, size)
+                            else:
+                                log.debug("IGNORE  folder=%s", e.path)
                             continue
                         if e.is_dir(follow_symlinks=False):
                             result.append(e.path)
@@ -210,6 +234,26 @@ class DiskScanner:
             log.error("TOP_FOLDERS root not accessible  path=%s  exc=%s", root_path, exc)
             self._q.put({"type": "error", "path": root_path, "msg": str(exc)})
         return result
+
+    def _quick_dir_size(self, path: str, max_depth: int = 6) -> int:
+        """Calcula el tamaño total de un directorio de forma rápida (sin indexar archivos)."""
+        total = 0
+        stack = [(path, 0)]
+        while stack:
+            dirpath, depth = stack.pop()
+            try:
+                with os.scandir(dirpath) as it:
+                    for e in it:
+                        try:
+                            if e.is_file(follow_symlinks=False):
+                                total += e.stat(follow_symlinks=False).st_size
+                            elif e.is_dir(follow_symlinks=False) and depth < max_depth:
+                                stack.append((e.path, depth + 1))
+                        except OSError:
+                            pass
+            except OSError:
+                pass
+        return total
 
     def _scan_folder(self, folder_path: str, root_path: str):
         """
@@ -252,6 +296,15 @@ class DiskScanner:
                         try:
                             if entry.is_dir(follow_symlinks=False):
                                 if _should_ignore(entry.name):
+                                    if entry.name in HEAVY_KNOWN_DIRS:
+                                        size = self._quick_dir_size(entry.path)
+                                        self._q.put({
+                                            "type":   "heavy_folder",
+                                            "path":   entry.path,
+                                            "name":   entry.name,
+                                            "parent": dirpath,
+                                            "size":   size,
+                                        })
                                     continue
                                 child_is_cache = dir_is_cache or entry.name.lower() in CACHE_FOLDER_NAMES
                                 stack.append((entry.path, dirpath, child_is_cache))
@@ -276,6 +329,8 @@ class DiskScanner:
                                     "extension": ext,
                                     "is_cache": is_cache,
                                     "parent_dir": dirpath,
+                                    "mtime": int(st.st_mtime),
+                                    "atime": int(st.st_atime),
                                 })
 
                                 dir_size    += s
@@ -284,7 +339,7 @@ class DiskScanner:
                                 folder_files    += 1
                                 files_since_progress += 1
 
-                                if s > DUP_MIN_SIZE:
+                                if s > DUP_MIN_SIZE and len(local_dups) < DUP_MAX_GROUPS:
                                     local_dups[(name.lower(), s)].append(entry.path)
 
                                 # Emitir lote cuando llega al límite
@@ -292,18 +347,16 @@ class DiskScanner:
                                     self._q.put({"type": "file_batch", "entries": batch})
                                     batch = []
 
-                                # Progreso intermedio: dentro de una carpeta grande
+                                # Progreso intermedio: dentro de una carpeta grande.
+                                # Lee sin lock: int reads en CPython son atómicos bajo el GIL.
                                 if files_since_progress >= PROGRESS_EVERY:
                                     files_since_progress = 0
-                                    with self._lock:
-                                        bytes_snap = self._bytes_total + folder_size
-                                        done_snap  = self._done_count
                                     self._q.put({
                                         "type":    "progress",
-                                        "done":    done_snap,
+                                        "done":    self._done_count,
                                         "total":   self._total_top,
                                         "current": dirpath,
-                                        "bytes":   bytes_snap,
+                                        "bytes":   self._bytes_total + folder_size,
                                     })
 
                         except (PermissionError, OSError) as e:

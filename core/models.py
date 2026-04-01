@@ -29,8 +29,9 @@ class FolderNode:
 class ScanResult:
     root_path: str
     total_bytes: int = 0
-    folders: dict = field(default_factory=dict)   # path -> FolderNode
-    files: list = field(default_factory=list)      # [FileEntry]
-    categories: dict = field(default_factory=dict) # cat -> bytes
-    duplicates: dict = field(default_factory=dict) # (name,size) -> [paths]
+    folders: dict = field(default_factory=dict)        # path -> FolderNode
+    files: list = field(default_factory=list)           # [FileEntry]
+    categories: dict = field(default_factory=dict)      # cat -> bytes
+    duplicates: dict = field(default_factory=dict)      # (name,size) -> [paths]
     elapsed: float = 0.0
+    heavy_folders: list = field(default_factory=list)   # [{"path","name","parent","size"}]

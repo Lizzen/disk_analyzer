@@ -19,6 +19,13 @@ def send_to_recycle_bin(path: str) -> Tuple[bool, str]:
     if not os.path.exists(path):
         return False, f"Ruta no encontrada: {path}"
 
+    # Guardia contra traversal por symlink: si el path es un enlace simbólico
+    # cuyo destino real es una ruta protegida del sistema, rechazar la operación.
+    if os.path.islink(path):
+        resolved = os.path.realpath(path)
+        if _is_protected(resolved):
+            return False, f"Enlace simbólico apunta a ruta protegida: {resolved}"
+
     # Intento 1: pywin32
     try:
         from win32com.shell import shell, shellcon
@@ -111,41 +118,47 @@ _PROTECTED_PATHS = _build_protected_paths()
 
 def _is_protected(path: str) -> bool:
     """
-    Devuelve True si la ruta, cualquier ancestro suyo o cualquier
-    descendiente suyo está dentro de una ruta protegida.
+    Devuelve True si:
+    - La ruta coincide exactamente con una protegida, O
+    - La ruta es un ancestro directo de una ruta protegida
+      (evita borrar padres de rutas criticas como C:/Windows/System).
+    NO bloquea descendientes de rutas protegidas del usuario
+    (p. ej. Downloads esta dentro de C:/Users/Name pero si se puede borrar).
     """
     norm = os.path.normcase(os.path.abspath(path))
     if norm in _PROTECTED_PATHS:
         return True
-    # Bloquear si la ruta ES un ancestro o un descendiente de una ruta protegida.
-    # - ancestro: evita borrar "C:\\Windows\\System" si es padre de System32
-    # - descendiente: evita borrar "C:\\Windows\\Temp" si "C:\\Windows" está protegido
+    # Bloquear solo si la ruta es un ANCESTRO de una ruta protegida
+    # (norm es prefijo de protected), para evitar borrar padres de rutas críticas.
     for protected in _PROTECTED_PATHS:
         try:
             common = os.path.commonpath([norm, protected])
         except ValueError:
-            # Rutas en diferentes unidades (p. ej. C: vs D:) producen ValueError
             continue
         if common == norm and norm != protected:
-            # norm es padre de un path protegido
-            return True
-        if common == protected and norm != protected:
-            # norm es hijo (descendiente) de un path protegido
+            # norm es padre de un path protegido → bloquear
             return True
     return False
 
 
-def delete_permanently(path: str) -> Tuple[bool, str]:
+def delete_permanently(path: str, trusted: bool = False) -> Tuple[bool, str]:
     """
     Borra 'path' de forma permanente (sin posibilidad de recuperación).
     ¡Solo llamar tras confirmación explícita del usuario!
-    Rechaza rutas críticas del sistema operativo.
+    Rechaza rutas críticas del sistema operativo salvo que trusted=True
+    (usado cuando la ruta ya fue validada como perteneciente a un directorio temporal conocido).
     """
     if not os.path.exists(path):
         return False, f"Ruta no encontrada: {path}"
 
-    # Protección: rechazar rutas críticas del sistema
-    if _is_protected(path):
+    # Guardia contra traversal por symlink
+    if os.path.islink(path):
+        resolved = os.path.realpath(path)
+        if _is_protected(resolved):
+            return False, f"Enlace simbólico apunta a ruta protegida: {resolved}"
+
+    # Protección: rechazar rutas críticas del sistema (omitir si la ruta es de confianza)
+    if not trusted and _is_protected(path):
         return False, f"Ruta protegida del sistema, no se puede eliminar: {path}"
 
     try:
