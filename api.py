@@ -462,7 +462,12 @@ def providers_status():
 
 
 class TestProviderRequest(BaseModel):
-    provider: str  # "gemini" | "groq" | "claude" | "ollama"
+    provider: str = Field(
+        ...,
+        pattern="^(gemini|groq|claude|ollama)$",
+        max_length=20,
+        description="Proveedor a probar: gemini, groq, claude u ollama.",
+    )
 
 
 @app.post("/api/providers/test")
