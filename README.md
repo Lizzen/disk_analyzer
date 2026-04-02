@@ -5,19 +5,27 @@
 ---
 
 <a id="english"></a>
-# Disk Analyzer (DKA) - English
+# Disk Analyzer (DKA) — English
 
+[![Version](https://img.shields.io/badge/version-1.0.0-6366f1.svg)]()
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![Version](https://img.shields.io/badge/version-1.0.1-indigo.svg)]()
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non_Commercial-red.svg)](#license)
-[![OS: Windows](https://img.shields.io/badge/OS-Windows-lightgrey.svg)]()
+[![OS: Windows](https://img.shields.io/badge/OS-Windows%2010%2F11-lightgrey.svg)]()
 
 A fast, modern disk space analyzer for Windows with an **integrated AI Assistant**. Scan your drive in seconds, visualize what is consuming your storage, and ask an AI chatbot what to do next — all from a sleek dark interface.
 
-Two interfaces are available:
+---
 
-- **Classic UI** (`main.py`) — pure Python + Tkinter, no dependencies beyond the standard library.
-- **Modern Web UI** (`run_modern.py`) — React + FastAPI served via pywebview. Virtualized file table, streaming chat, tabbed settings panel.
+## ⬇️ Download
+
+> **No Python or Node.js required — just download and run.**
+
+**[⬇ Download DiskAnalyzer.exe (v1.0.0)](https://github.com/Lizzen/disk_analyzer/releases/latest/download/DiskAnalyzer.exe)**
+
+Or go to the [Releases page](https://github.com/Lizzen/disk_analyzer/releases/latest) to see all versions.
+
+> Windows will request administrator privileges on launch — this is required to scan all disk folders accurately.
 
 ---
 
@@ -66,21 +74,20 @@ Two interfaces are available:
 
 ## Key Features
 
-- **Fast Multithreaded Scanning:** `os.scandir()` DFS with `ThreadPoolExecutor` — real-time results streamed as it scans.
-- **Modern Themed UI:** 12 built-in themes switchable live from Settings.
-- **Virtualized File Table:** Custom virtualizer renders only visible rows — handles 1M+ files smoothly.
-- **Post-scan Summary Panel:** Stat cards + top categories breakdown after every scan.
-- **Multiple Views:** Folder tree, sortable file table, horizontal bar chart.
-- **Dynamic Filtering:** Category pills, minimum size selector, debounced name search, last-accessed filter.
-- **MD5 Duplicate Detection:** Same name + size → verified by MD5 hash in background.
-- **Context Menu:** Right-click to open in Explorer, copy path, attach to AI chat, move to Recycle Bin, or permanently delete.
-- **Risk Alerts:** Automatic post-scan analysis surfaces dangerous or wasteful files.
-- **Temp Cleaner:** Targeted cleanup of browser caches, Windows temp folders and thumbnails.
-- **Heavy Folder Detection:** node_modules, .git, __pycache__, venv etc. reported with size during scan.
-- **Export:** CSV, JSON, or standalone HTML report.
-- **Scan History:** Last 10 scans persisted locally for quick comparison.
-- **Favorites & Comparator:** Pin paths, compare folders side-by-side.
-- **Integrated AI Assistant:** Streaming chat with Mermaid diagram generation, Claude Code-style code blocks, full Markdown rendering, and full access to scan metadata.
+- **Fast Multithreaded Scanning** — `os.scandir()` DFS with `ThreadPoolExecutor`, real-time results streamed as it scans.
+- **Modern Themed UI** — 12 built-in themes switchable live from Settings.
+- **Virtualized File Table** — Custom virtualizer renders only visible rows — handles 1M+ files smoothly.
+- **Multiple Views** — Folder tree, sortable file table, horizontal bar chart, treemap, timeline.
+- **Dynamic Filtering** — Category pills, minimum size selector, debounced name search, last-accessed filter.
+- **MD5 Duplicate Detection** — Same name + size → verified by MD5 hash in background.
+- **Context Menu** — Right-click to open in Explorer, copy path, attach to AI chat, move to Recycle Bin, or permanently delete.
+- **Risk Alerts** — Automatic post-scan analysis surfaces dangerous or wasteful files (executables in TEMP, large no-extension files, abnormal folder sizes, duplicate waste).
+- **Temp Cleaner** — Targeted cleanup of browser caches, Windows temp folders and thumbnails.
+- **Heavy Folder Detection** — `node_modules`, `.git`, `__pycache__`, `venv`, `ShaderCache` etc. reported with total size during scan.
+- **Export** — CSV, JSON, or standalone HTML report.
+- **Scan History** — Last 10 scans persisted locally for quick comparison.
+- **Favorites & Comparator** — Pin paths, compare folders side-by-side.
+- **Integrated AI Assistant** — Streaming chat with Mermaid diagram generation, Claude Code-style code blocks, full Markdown rendering, and full access to scan metadata.
 
 ---
 
@@ -96,33 +103,14 @@ The right panel includes a chatbot with access to your scan results. Ask it thin
 
 Right-click any file and select **Attach to chat** to give the AI specific context about it.
 
-### Mermaid Diagrams
-
-The AI can generate visual diagrams when you ask for them:
-
-```
-"show me the top folders as a flowchart"
-"draw the scan architecture"
-"visualize the folder hierarchy"
-```
-
-Diagrams render inline in the chat. Click to expand fullscreen, or use the copy button to get the raw Mermaid source.
-
 ### Supported Providers
 
 | Provider | Models | Free Tier | Requires Key |
 |---|---|---|---|
 | **Google Gemini** | gemini-2.5-flash/pro, gemini-2.0-flash, gemini-1.5-pro/flash… | ✓ 1,500 req/day | Yes — [aistudio.google.com](https://aistudio.google.com/app/apikey) |
-| **Groq** | Llama 4 Scout, Llama 3.3 70B, Kimi K2, Qwen 3 32B, DeepSeek R1, GPT OSS… | ✓ 14,400 req/day | Yes — [console.groq.com](https://console.groq.com/keys) |
+| **Groq** | Llama 4 Scout, Llama 3.3 70B, Kimi K2, Qwen 3 32B, DeepSeek R1… | ✓ 14,400 req/day | Yes — [console.groq.com](https://console.groq.com/keys) |
 | **Claude (Anthropic)** | claude-haiku-4-5, claude-sonnet-4-5/4-6, claude-opus-4-6… | Trial credits | Yes — [console.anthropic.com](https://console.anthropic.com/account/keys) |
 | **Ollama (local)** | Auto-detected from your local installation | ✓ Unlimited | No — requires [Ollama](https://ollama.com) |
-
-### LLM Parameters
-
-- **Temperature** (0.0–2.0): controls response creativity vs. precision.
-- **Max tokens** (256–8192): maximum response length.
-
-Both are adjustable per-session from the **⚙ Params** tab in the settings panel.
 
 ### Setup
 
@@ -140,53 +128,29 @@ Both are adjustable per-session from the **⚙ Params** tab in the settings pane
 
 ---
 
-## Requirements
+## Running from Source
 
-- **OS:** Windows 10 / 11
-- **Python:** 3.11 or higher
-
-### Python dependencies
-
-```bash
-# Core (Modern UI only):
-pip install fastapi uvicorn pywebview
-
-# AI providers (install only what you need):
-pip install google-genai   # Gemini
-pip install groq            # Groq
-pip install anthropic       # Claude
-pip install ollama          # Ollama local
-
-# Frontend build (only needed to rebuild the UI):
-cd frontend && npm install && npm run build
-```
-
-> `pywin32` is optional — improves Recycle Bin support. If absent, a `ctypes` fallback is used automatically.
-
----
-
-## Installation & Running
+Requirements: **Windows 10/11**, **Python 3.11+**, **Node.js 18+**
 
 ```bash
 git clone https://github.com/Lizzen/disk_analyzer.git
 cd disk_analyzer
 
 # Install Python dependencies
-pip install fastapi uvicorn pywebview google-genai groq anthropic
+pip install -r requirements.txt
 
-# Modern Web UI (recommended)
-python run_modern.py
+# Build frontend (only needed once, or after frontend changes)
+cd frontend && npm install && npm run build && cd ..
 
-# Classic Tkinter UI
-python main.py
+# Launch (double-click or run from terminal)
+.\run_admin.bat
 ```
 
-The Modern UI serves a pre-built React frontend from `frontend/dist/`. To rebuild it after modifying the frontend source:
+### Building the executable yourself
 
 ```bash
-cd frontend
-npm install
-npm run build
+.\build_exe.bat
+# Output: dist\DiskAnalyzer.exe
 ```
 
 ---
@@ -195,81 +159,61 @@ npm run build
 
 ```text
 disk_analyzer/
-├── main.py                    # Classic Tkinter entry point
-├── run_modern.py              # Modern Web UI entry point (FastAPI + pywebview)
-├── api.py                     # FastAPI backend: WebSocket scan, chat SSE, export, risks, temp cleaner
-├── app.py                     # Classic UI orchestrator: polling loop, dispatcher
+├── app_web.py              # Main entry point (FastAPI + pywebview)
+├── api.py                  # FastAPI backend: WebSocket scan, chat SSE, export, risks, temp cleaner
+├── disk_analyzer.spec      # PyInstaller build config (onefile)
+├── build_exe.bat           # One-click build script
+├── run_admin.bat           # Development launcher
+├── requirements.txt        # Pinned Python dependencies
 ├── core/
-│   ├── models.py              # Data classes: FileEntry, FolderNode, ScanResult
-│   ├── scanner.py             # DFS scanner, heavy folder detection, MD5 duplicate verification
-│   ├── risk_detector.py       # Post-scan risk analysis (executables in TEMP, large unknowns, etc.)
-│   └── trash.py               # Recycle Bin, safe permanent delete, open in Explorer
-├── ui/                        # Classic Tkinter UI components
-│   ├── theme.py               # Centralized dark palette, ttk styles, color helpers
-│   ├── toolbar.py             # Top bar: logo, path entry, buttons
-│   ├── disk_bar.py            # Animated donut chart + disk usage metrics
-│   ├── tree_panel.py          # Folder tree with hover and context menu
-│   ├── file_table.py          # Sortable file table, row color tags, hover
-│   ├── filter_bar.py          # Category pills, size combobox, name search
-│   ├── summary_panel.py       # Post-scan stat cards and category bar chart
-│   ├── status_bar.py          # Progress bar, status dot, inline metrics
-│   ├── tooltip.py             # Floating tooltip with delay and auto-hide
-│   ├── dialogs.py             # Confirm delete and duplicates dialogs
-│   └── exclude_dialog.py      # Scan exclusion list manager
+│   ├── models.py           # Data classes: FileEntry, FolderNode, ScanResult
+│   ├── scanner.py          # DFS scanner, heavy folder detection, MD5 duplicate verification
+│   ├── risk_detector.py    # Post-scan risk analysis
+│   └── trash.py            # Recycle Bin, safe permanent delete, symlink guard
 ├── chatbot/
-│   ├── config.py              # API key storage (AppData) and model config
-│   ├── context_builder.py     # Builds system prompt from scan metadata + glossary
+│   ├── config.py           # API key storage (Windows Credential Manager) and model config
+│   ├── context_builder.py  # Builds system prompt from scan metadata + glossary
 │   └── providers/
-│       ├── base.py            # Abstract AIProvider base class (supports multipart content)
-│       ├── gemini.py          # Google Gemini (google-genai)
-│       ├── groq_p.py          # Groq (groq)
-│       ├── claude.py          # Anthropic Claude (anthropic)
-│       └── ollama.py          # Ollama local — lists installed models
-├── frontend/                  # Modern React UI
-│   ├── src/App.jsx            # Main component (~3600+ lines)
-│   ├── dist/                  # Pre-built production assets served by FastAPI
-│   └── package.json
+│       ├── base.py         # Abstract AIProvider base class
+│       ├── gemini.py       # Google Gemini
+│       ├── groq_p.py       # Groq
+│       ├── claude.py       # Anthropic Claude
+│       └── ollama.py       # Ollama local
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx                         # Main component
+│   │   ├── components/chat/                # ChatMarkdown, Mermaid, action bar
+│   │   ├── components/files/               # Virtualized file table
+│   │   ├── components/modals/              # Settings, temp cleaner, risk alerts
+│   │   └── components/visualizations/      # Treemap, timeline, bar chart
+│   └── dist/               # Pre-built production assets (served by FastAPI)
 ├── utils/
-│   ├── formatters.py          # Byte and percentage formatting
-│   └── logger.py              # Rotating file logger (logs/dka_YYYY-MM-DD.log)
-├── tests/
-│   └── test_scanner.py        # Unit tests for scanner and models
-└── logs/                      # Auto-created scan log files
+│   ├── formatters.py       # Byte and percentage formatting
+│   └── logger.py           # Rotating file logger
+└── tests/
+    ├── test_scanner.py     # Scanner unit tests
+    └── test_api.py         # 43 API endpoint integration tests
 ```
 
 ---
 
 ## Architecture
 
-### Modern UI — Real-Time Scanning
-
-The scanner runs in a background thread and sends batched messages to the frontend via WebSocket. The React frontend accumulates results in refs (no re-render per batch) and flushes to state every 500ms.
-
 ```mermaid
 flowchart TD
-    A[Worker Thread: DiskScanner] -->|WebSocket batches| B[file_batch / folder / progress / done]
-    B --> C[React: allFilesRef / foldersRef accumulation]
-    C -->|flush every 500ms| D[React state / VirtualList render]
-    E[POST /api/chat] -->|SSE stream chunks 30ms| F[ChatMarkdown + MermaidDiagram]
+    A[DiskScanner thread] -->|WebSocket batches| B[file_batch / folder / progress / done]
+    B --> C[React: allFilesRef accumulation]
+    C -->|flush every 500ms| D[VirtualList render]
+    E[POST /api/chat] -->|SSE stream| F[ChatMarkdown + MermaidDiagram]
     G[scan done] -->|GET /api/risks| H[RiskAlertsPanel]
 ```
-
-### WebSocket Message Types
-
-| Type | Fields |
-|---|---|
-| `start` | `root` |
-| `folder` | `path`, `size`, `file_count` |
-| `file_batch` | `entries: list[dict]` |
-| `progress` | `done`, `total`, `current`, `bytes` |
-| `heavy_folder` | `path`, `name`, `parent`, `size` |
-| `done` | `total_bytes`, `elapsed`, `duplicates`, `errors` |
 
 ### API Endpoints
 
 | Method | Path | Description |
 |---|---|---|
 | `WS` | `/ws/scan` | Real-time scan messages |
+| `GET` | `/api/drives` | List available drives |
 | `GET` | `/api/disk-info` | Disk usage for a given path |
 | `POST` | `/api/chat` | SSE streaming AI chat |
 | `GET` | `/api/config` | Load saved config (keys masked) |
@@ -287,56 +231,18 @@ flowchart TD
 
 ---
 
-## Table Color Code
-
-| Color | Meaning |
-|---|---|
-| Red row | > 1 GB |
-| Amber row | > 100 MB |
-| Blue row | > 10 MB |
-| Purple row | Cache / temporary file |
-| Alternating dark | All other files |
-
----
-
-## Detected File Categories
-
-| Category | Extensions |
-|---|---|
-| Videos | `.mp4`, `.mkv`, `.avi`, `.mov`, `.wmv`, `.ts`… |
-| Images | `.jpg`, `.png`, `.gif`, `.raw`, `.psd`, `.heic`… |
-| Audio | `.mp3`, `.flac`, `.wav`, `.aac`, `.opus`… |
-| Documents | `.pdf`, `.docx`, `.xlsx`, `.txt`, `.epub`… |
-| Installers/ISO | `.iso`, `.exe`, `.msi`, `.zip`, `.7z`, `.rar`… |
-| Temporary/Cache | `.tmp`, `.temp`, `.log`, `.bak`, `.dmp`… |
-| Dev (compiled) | `.pyc`, `.class`, `.obj`, `.pdb`… |
-| Databases | `.db`, `.sqlite`, `.mdf`… |
-
----
-
-## Known Limitations & Technical Debt
-
-### Dual Interface Maintenance
-
-The project currently maintains two parallel interfaces — the legacy Tkinter UI (`ui/`, `app.py`) and the modern React web UI (`frontend/`, `api.py`). Every new visual feature requires effort in two places. The Tkinter codebase will progressively fall behind as the web UI grows. A future release should formally deprecate the classic interface and consolidate entirely around React + FastAPI.
-
-### Memory Usage at Scale
-
-The scanner holds the full file index in Python dicts in RAM for the lifetime of the session. On disks with millions of small files (e.g. a 4–5 TB drive densely packed with files), memory pressure can become significant. A future release could introduce an embedded database index — `sqlite3` in-memory or DuckDB — to store the scan index before loading it into the application, decoupling scan size from working-set memory.
-
----
-
 ## Security & Privacy
 
-- **Protected permanent deletion:** Rejects critical system paths (`C:\`, `C:\Windows`, `C:\System32`, etc.) and their ancestors.
-- **Temp cleaner path validation:** Every path is validated against known temp roots before deletion — no arbitrary file deletion.
-- **No `shell=True`:** Subprocesses use argument lists — no command injection risk.
-- **Input validation:** All API endpoints validate path lengths, characters, and drive letters via `ctypes.GetLogicalDrives()`.
-- **AI sees metadata only:** The chatbot receives names, sizes, paths and categories. It never reads file contents.
-- **API keys stored safely:** Saved in `%APPDATA%\DiskAnalyzer\api_keys.json`, outside the repository — never committed to git.
-- **HTML export XSS-safe:** All values are escaped with `html.escape()` before insertion.
-- **Daemon threads:** Scanner and MD5 verifier use `daemon=True` — process exits cleanly.
-- **Recycle by default:** Permanent deletion requires an additional explicit confirmation.
+- **Secure credential storage** — API keys stored in the Windows Credential Manager, never in plain text files.
+- **Symlink traversal guard** — Recycle Bin and permanent delete check resolved symlink targets against protected paths.
+- **Protected permanent deletion** — Rejects critical system paths (`C:\`, `C:\Windows`, `C:\System32`, etc.) and their ancestors.
+- **Temp cleaner path validation** — Every path validated against known temp roots before deletion.
+- **No `shell=True`** — Subprocesses use argument lists — no command injection risk.
+- **Input validation** — All API endpoints validate path lengths, characters, and drive letters.
+- **AI sees metadata only** — The chatbot receives names, sizes, paths and categories. It never reads file contents.
+- **XSS-safe Mermaid** — `securityLevel: "strict"` + DOM rendering instead of `innerHTML` injection.
+- **HTML export XSS-safe** — All values escaped with `html.escape()`.
+- **CORS restricted** — API only accepts requests from `localhost` / `127.0.0.1`.
 
 ---
 
@@ -354,19 +260,27 @@ See the `LICENSE` file for full terms.
 ---
 
 <a id="español"></a>
-# Disk Analyzer (DKA) - Español
+# Disk Analyzer (DKA) — Español
 
+[![Version](https://img.shields.io/badge/version-1.0.0-6366f1.svg)]()
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![Version](https://img.shields.io/badge/version-1.0.1-indigo.svg)]()
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non_Commercial-red.svg)](#licencia)
-[![OS: Windows](https://img.shields.io/badge/OS-Windows-lightgrey.svg)]()
+[![OS: Windows](https://img.shields.io/badge/OS-Windows%2010%2F11-lightgrey.svg)]()
 
 Analizador de espacio en disco moderno para Windows con **Asistente de IA integrado**. Escanea tu disco en segundos, visualiza qué consume tu almacenamiento y pregunta al chatbot qué hacer — todo desde una interfaz oscura y fluida.
 
-Dos interfaces disponibles:
+---
 
-- **Interfaz Clásica** (`main.py`) — Python puro + Tkinter, sin dependencias externas.
-- **Interfaz Web Moderna** (`run_modern.py`) — React + FastAPI servido vía pywebview. Tabla virtualizada, chat con streaming, panel de ajustes con pestañas.
+## ⬇️ Descarga
+
+> **No requiere Python ni Node.js — descarga y ejecuta directamente.**
+
+**[⬇ Descargar DiskAnalyzer.exe (v1.0.0)](https://github.com/Lizzen/disk_analyzer/releases/latest/download/DiskAnalyzer.exe)**
+
+O visita la [página de Releases](https://github.com/Lizzen/disk_analyzer/releases/latest) para ver todas las versiones.
+
+> Windows pedirá permisos de administrador al lanzar la app — necesario para escanear todas las carpetas del disco con precisión.
 
 ---
 
@@ -415,63 +329,42 @@ Dos interfaces disponibles:
 
 ## Características Principales
 
-- **Escaneo Multihilo Rápido:** DFS con `os.scandir()` y `ThreadPoolExecutor` — resultados en tiempo real.
-- **Interfaz con Temas:** 12 temas integrados cambiables en vivo desde Ajustes.
-- **Tabla Virtualizada:** Virtualizador propio — fluido con más de 1M de archivos.
-- **Panel de Resumen Post-Escaneo:** Tarjetas de estadísticas + desglose de categorías.
-- **Múltiples Vistas:** Árbol de carpetas, tabla de archivos, gráfica de barras horizontales.
-- **Filtrado Dinámico:** Pills de categoría, selector de tamaño mínimo, búsqueda por nombre, filtro por último acceso.
-- **Detección de Duplicados con MD5:** Mismo nombre + tamaño → verificado por hash MD5 en segundo plano.
-- **Menú Contextual:** Clic derecho para abrir en Explorador, copiar ruta, adjuntar al chat, Papelera o borrado permanente.
-- **Alertas de Riesgo:** Análisis automático post-escaneo que detecta archivos peligrosos o que desperdician espacio.
-- **Limpiador de Temporales:** Limpieza selectiva de cachés de navegadores, carpetas temp de Windows y miniaturas.
-- **Detección de Carpetas Pesadas:** node_modules, .git, __pycache__, venv etc. reportados con tamaño durante el escaneo.
-- **Exportación:** CSV, JSON o informe HTML independiente.
-- **Historial de Escaneos:** Últimos 10 escaneos persistidos localmente.
-- **Favoritos y Comparador:** Fija rutas y compara carpetas lado a lado.
-- **Asistente IA Integrado:** Chat con streaming, generación de diagramas Mermaid, bloques de código estilo Claude Code, Markdown completo y acceso a los metadatos del escaneo.
+- **Escaneo Multihilo Rápido** — DFS con `os.scandir()` y `ThreadPoolExecutor`, resultados en tiempo real.
+- **Interfaz con Temas** — 12 temas integrados cambiables en vivo desde Ajustes.
+- **Tabla Virtualizada** — Virtualizador propio — fluido con más de 1M de archivos.
+- **Múltiples Vistas** — Árbol de carpetas, tabla de archivos, gráfica de barras, treemap, línea de tiempo.
+- **Filtrado Dinámico** — Pills de categoría, selector de tamaño mínimo, búsqueda por nombre, filtro por último acceso.
+- **Detección de Duplicados MD5** — Mismo nombre + tamaño → verificado por hash MD5 en segundo plano.
+- **Menú Contextual** — Clic derecho para abrir en Explorador, copiar ruta, adjuntar al chat, Papelera o borrado permanente.
+- **Alertas de Riesgo** — Análisis automático post-escaneo detecta archivos peligrosos o que desperdician espacio.
+- **Limpiador de Temporales** — Limpieza selectiva de cachés de navegadores, carpetas temp de Windows y miniaturas.
+- **Detección de Carpetas Pesadas** — `node_modules`, `.git`, `__pycache__`, `venv`, `ShaderCache` etc. reportados con tamaño total.
+- **Exportación** — CSV, JSON o informe HTML independiente.
+- **Historial de Escaneos** — Últimos 10 escaneos persistidos localmente.
+- **Favoritos y Comparador** — Fija rutas y compara carpetas lado a lado.
+- **Asistente IA Integrado** — Chat con streaming, diagramas Mermaid, bloques de código estilo Claude Code, Markdown completo y acceso a metadatos del escaneo.
 
 ---
 
 ## Asistente IA
 
-El panel derecho incluye un chatbot con acceso a los resultados de tu escaneo. Puedes preguntarle:
+El panel derecho incluye un chatbot con acceso a los resultados de tu escaneo:
 
 - *"¿Qué está ocupando más espacio?"*
 - *"¿Puedo borrar los archivos de caché de forma segura?"*
 - *"¿Cuáles de estos duplicados debo eliminar?"*
 - *"Muéstrame la estructura de carpetas como diagrama."*
-- *"Dibuja un flowchart de cómo funciona el escáner."*
 
 Haz clic derecho en cualquier archivo y selecciona **Adjuntar al chat** para darle contexto específico a la IA.
-
-### Diagramas Mermaid
-
-La IA puede generar diagramas visuales cuando se los pides:
-
-```
-"muéstrame las carpetas principales como flowchart"
-"dibuja la arquitectura del escáner"
-"visualiza la jerarquía de carpetas"
-```
-
-Los diagramas se renderizan inline en el chat. Haz click para ampliarlos a pantalla completa, o usa el botón copiar para obtener el código Mermaid fuente.
 
 ### Proveedores Soportados
 
 | Proveedor | Modelos | Tier gratuito | Requiere key |
 |---|---|---|---|
 | **Google Gemini** | gemini-2.5-flash/pro, gemini-2.0-flash, gemini-1.5-pro/flash… | ✓ 1.500 req/día | Sí — [aistudio.google.com](https://aistudio.google.com/app/apikey) |
-| **Groq** | Llama 4 Scout, Llama 3.3 70B, Kimi K2, Qwen 3 32B, DeepSeek R1, GPT OSS… | ✓ 14.400 req/día | Sí — [console.groq.com](https://console.groq.com/keys) |
+| **Groq** | Llama 4 Scout, Llama 3.3 70B, Kimi K2, Qwen 3 32B, DeepSeek R1… | ✓ 14.400 req/día | Sí — [console.groq.com](https://console.groq.com/keys) |
 | **Claude (Anthropic)** | claude-haiku-4-5, claude-sonnet-4-5/4-6, claude-opus-4-6… | Créditos trial | Sí — [console.anthropic.com](https://console.anthropic.com/account/keys) |
-| **Ollama (local)** | Detectado automáticamente desde tu instalación local | ✓ Sin límite | No — requiere [Ollama](https://ollama.com) |
-
-### Parámetros del LLM
-
-- **Temperatura** (0.0–2.0): controla creatividad vs. precisión.
-- **Máx. tokens** (256–8192): longitud máxima de respuesta.
-
-Ambos ajustables en la pestaña **⚙ Params** del panel de configuración.
+| **Ollama (local)** | Detectado automáticamente | ✓ Sin límite | No — requiere [Ollama](https://ollama.com) |
 
 ### Configurar la IA
 
@@ -489,53 +382,29 @@ Ambos ajustables en la pestaña **⚙ Params** del panel de configuración.
 
 ---
 
-## Requisitos
+## Ejecutar desde el código fuente
 
-- **Sistema Operativo:** Windows 10 / 11
-- **Python:** 3.11 o superior
-
-### Dependencias Python
-
-```bash
-# Interfaz moderna (obligatorio):
-pip install fastapi uvicorn pywebview
-
-# Proveedores de IA (instala solo los que necesites):
-pip install google-genai   # Gemini
-pip install groq            # Groq
-pip install anthropic       # Claude
-pip install ollama          # Ollama local
-
-# Reconstruir el frontend (solo si modificas el código React):
-cd frontend && npm install && npm run build
-```
-
-> `pywin32` es opcional — mejora el soporte de la Papelera. Si no está instalado se usa un fallback automático vía `ctypes`.
-
----
-
-## Instalación y Ejecución
+Requisitos: **Windows 10/11**, **Python 3.11+**, **Node.js 18+**
 
 ```bash
 git clone https://github.com/Lizzen/disk_analyzer.git
 cd disk_analyzer
 
 # Instalar dependencias Python
-pip install fastapi uvicorn pywebview google-genai groq anthropic
+pip install -r requirements.txt
 
-# Interfaz Web Moderna (recomendada)
-python run_modern.py
+# Compilar frontend (solo una vez, o tras cambios en el frontend)
+cd frontend && npm install && npm run build && cd ..
 
-# Interfaz Clásica Tkinter
-python main.py
+# Lanzar (doble clic o desde terminal)
+.\run_admin.bat
 ```
 
-La interfaz moderna sirve el frontend React pre-compilado desde `frontend/dist/`. Para recompilarlo tras modificar el código fuente del frontend:
+### Compilar el ejecutable
 
 ```bash
-cd frontend
-npm install
-npm run build
+.\build_exe.bat
+# Resultado: dist\DiskAnalyzer.exe
 ```
 
 ---
@@ -544,46 +413,40 @@ npm run build
 
 ```text
 disk_analyzer/
-├── main.py                    # Punto de entrada — Interfaz Clásica Tkinter
-├── run_modern.py              # Punto de entrada — Interfaz Web Moderna
-├── api.py                     # Backend FastAPI: WebSocket scan, chat SSE, export, riesgos, limpiador temp
-├── app.py                     # Orquestador UI clásica: polling loop, dispatcher
+├── app_web.py              # Punto de entrada principal (FastAPI + pywebview)
+├── api.py                  # Backend FastAPI: WebSocket scan, chat SSE, export, riesgos, limpiador temp
+├── disk_analyzer.spec      # Configuración de compilación PyInstaller (onefile)
+├── build_exe.bat           # Script de compilación con un clic
+├── run_admin.bat           # Lanzador de desarrollo
+├── requirements.txt        # Dependencias Python con versiones fijadas
 ├── core/
-│   ├── models.py              # Clases de datos: FileEntry, FolderNode, ScanResult
-│   ├── scanner.py             # Scanner DFS, detección carpetas pesadas, duplicados MD5
-│   ├── risk_detector.py       # Análisis de riesgos post-escaneo
-│   └── trash.py               # Papelera, borrado permanente, abrir en Explorador
-├── ui/                        # Componentes de la UI Clásica (Tkinter)
-│   ├── theme.py               # Paleta oscura, estilos ttk y helpers de color
-│   ├── toolbar.py             # Barra superior: logo, entry de ruta, botones
-│   ├── disk_bar.py            # Gráfico donut animado + métricas de disco
-│   ├── tree_panel.py          # Árbol de carpetas con hover y menú contextual
-│   ├── file_table.py          # Tabla de archivos ordenable con hover y tags de color
-│   ├── filter_bar.py          # Pills de categoría, selector de tamaño, búsqueda
-│   ├── summary_panel.py       # Panel post-escaneo: tarjetas y barras de categorías
-│   ├── status_bar.py          # Barra de progreso, dot de estado, métricas inline
-│   ├── tooltip.py             # Tooltip flotante con delay y auto-hide
-│   ├── dialogs.py             # Diálogos de confirmación de borrado y duplicados
-│   └── exclude_dialog.py      # Gestión de carpetas excluidas del escaneo
+│   ├── models.py           # Clases de datos: FileEntry, FolderNode, ScanResult
+│   ├── scanner.py          # Scanner DFS, detección carpetas pesadas, duplicados MD5
+│   ├── risk_detector.py    # Análisis de riesgos post-escaneo
+│   └── trash.py            # Papelera, borrado permanente, guardia de symlinks
 ├── chatbot/
-│   ├── config.py              # Almacenamiento de API keys (AppData) y config de modelos
-│   ├── context_builder.py     # Construye el system prompt con metadatos del escaneo + glosario
+│   ├── config.py           # API keys (Administrador de Credenciales) y config de modelos
+│   ├── context_builder.py  # Construye el system prompt desde metadatos del escaneo
 │   └── providers/
-│       ├── base.py            # Clase abstracta AIProvider (soporta contenido multipart)
-│       ├── gemini.py          # Google Gemini (google-genai)
-│       ├── groq_p.py          # Groq (groq)
-│       ├── claude.py          # Anthropic Claude (anthropic)
-│       └── ollama.py          # Ollama local — lista modelos instalados automáticamente
-├── frontend/                  # Interfaz Web Moderna (React + Vite)
-│   ├── src/App.jsx            # Componente principal (~3600+ líneas)
-│   ├── dist/                  # Assets de producción pre-compilados, servidos por FastAPI
-│   └── package.json
+│       ├── base.py         # Clase base abstracta AIProvider
+│       ├── gemini.py       # Google Gemini
+│       ├── groq_p.py       # Groq
+│       ├── claude.py       # Anthropic Claude
+│       └── ollama.py       # Ollama local
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx                         # Componente principal
+│   │   ├── components/chat/                # ChatMarkdown, Mermaid, barra de acciones
+│   │   ├── components/files/               # Tabla de archivos virtualizada
+│   │   ├── components/modals/              # Ajustes, limpiador temp, alertas de riesgo
+│   │   └── components/visualizations/      # Treemap, línea de tiempo, gráfica de barras
+│   └── dist/               # Assets de producción pre-compilados (servidos por FastAPI)
 ├── utils/
-│   ├── formatters.py          # Formateo de bytes y porcentajes
-│   └── logger.py              # Logger rotativo (logs/dka_YYYY-MM-DD.log)
-├── tests/
-│   └── test_scanner.py        # Tests unitarios del scanner y los modelos
-└── logs/                      # Archivos de log generados automáticamente
+│   ├── formatters.py       # Formateo de bytes y porcentajes
+│   └── logger.py           # Logger con rotación de archivos
+└── tests/
+    ├── test_scanner.py     # Tests unitarios del scanner
+    └── test_api.py         # 43 tests de integración de endpoints API
 ```
 
 ---
@@ -665,46 +528,25 @@ flowchart TD
 
 ## Seguridad y Privacidad
 
-- **Borrado permanente protegido:** Rechaza rutas críticas del sistema (`C:\`, `C:\Windows`, `C:\System32`, etc.) y sus ancestros.
-- **Validación del limpiador de temporales:** Cada ruta se valida contra raíces temp conocidas antes de borrar — sin borrado arbitrario de archivos.
-- **Sin `shell=True`:** Los subprocesos usan listas de argumentos — sin riesgo de inyección de comandos.
-- **Validación de inputs:** Todos los endpoints validan longitud, caracteres y letras de unidad mediante `ctypes.GetLogicalDrives()`.
-- **La IA solo ve metadatos:** El chatbot recibe nombres, tamaños, rutas y categorías. Nunca el contenido de los archivos.
-- **API keys fuera del código:** Se guardan en `%APPDATA%\DiskAnalyzer\api_keys.json`, fuera del repositorio — nunca se suben a git.
-- **Exportación HTML segura contra XSS:** Todos los valores son escapados con `html.escape()`.
-- **Hilos daemon:** El scanner y el verificador MD5 usan `daemon=True` — el proceso termina limpiamente.
-- **Mover a Papelera por defecto:** El borrado permanente requiere un diálogo de confirmación adicional.
-
----
-
-## Limitaciones Conocidas y Deuda Técnica
-
-### Mantenimiento de Doble Interfaz
-
-El proyecto mantiene actualmente dos interfaces en paralelo: la UI Tkinter legacy (`ui/`, `app.py`) y la interfaz web moderna en React (`frontend/`, `api.py`). Cada nueva funcionalidad visual requiere esfuerzo en dos lugares. La base de código Tkinter quedará progresivamente desactualizada a medida que la web UI crezca. Una versión futura debería deprecar formalmente la interfaz clásica y consolidar todo en React + FastAPI.
-
-### Uso de Memoria a Gran Escala
-
-El scanner mantiene el índice completo de archivos en diccionarios Python en RAM durante toda la sesión. En discos con millones de archivos pequeños (por ejemplo, un disco de 4–5 TB muy lleno), la presión de memoria puede volverse significativa. Una versión futura podría introducir un índice en base de datos embebida — `sqlite3` en memoria o DuckDB — para almacenar el índice del escaneo antes de cargarlo en la aplicación, desacoplando el tamaño del escaneo del conjunto de memoria de trabajo.
-
----
-
-## Contribuir
-
-1. Haz un *Fork* del repositorio.
-2. Crea una rama: `git checkout -b feature/NuevaCaracteristica`
-3. Haz commit: `git commit -m 'Añade NuevaCaracteristica'`
-4. Push: `git push origin feature/NuevaCaracteristica`
-5. Abre un **Pull Request**.
+- **Almacenamiento seguro de credenciales** — API keys en el Administrador de Credenciales de Windows, nunca en texto plano.
+- **Guardia contra traversal por symlinks** — Papelera y borrado verifican el destino real de los enlaces simbólicos.
+- **Borrado permanente protegido** — Rechaza rutas críticas del sistema (`C:\`, `C:\Windows`, etc.) y sus ancestros.
+- **Validación de rutas en el limpiador** — Cada ruta se valida contra raíces temp conocidas antes de borrar.
+- **Sin `shell=True`** — Los subprocesos usan listas de argumentos — sin riesgo de inyección de comandos.
+- **Validación de entrada** — Todos los endpoints validan longitud de ruta, caracteres y letras de unidad.
+- **La IA solo ve metadatos** — El chatbot recibe nombres, tamaños, rutas y categorías. Nunca lee contenidos de archivos.
+- **Mermaid XSS-safe** — `securityLevel: "strict"` + renderizado DOM en lugar de inyección de `innerHTML`.
+- **Exportación HTML XSS-safe** — Todos los valores escapados con `html.escape()`.
+- **CORS restringido** — La API solo acepta peticiones desde `localhost` / `127.0.0.1`.
 
 ---
 
 ## Licencia
 
-Licencia **Gratuita y No Comercial.**
+**Licencia Libre y No Comercial.**
 
 - **Permitido:** Usar, ver, modificar y compartir mejoras libremente.
-- **Prohibido:** Vender, cobrar por la distribución o integrar en productos comerciales.
+- **Prohibido:** Vender, cobrar por distribución o integrar en productos comerciales.
 - **Obligatorio:** Mantener el aviso de copyright (`Copyright (c) Lizzen`) en cualquier versión distribuida o modificada.
 
-Consulta el archivo `LICENSE` para los términos completos.
+Ver el archivo `LICENSE` para los términos completos.
