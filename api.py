@@ -461,6 +461,48 @@ def providers_status():
     return {pid: {"available": ok, "reason": msg} for pid, (ok, msg) in status.items()}
 
 
+class TestProviderRequest(BaseModel):
+    provider: str  # "gemini" | "groq" | "claude" | "ollama"
+
+
+@app.post("/api/providers/test")
+def test_provider(body: TestProviderRequest):
+    """Hace una llamada real mínima al proveedor y devuelve la respuesta."""
+    from chatbot.providers.gemini import GeminiProvider
+    from chatbot.providers.claude import ClaudeProvider
+    from chatbot.providers.groq_p import GroqProvider
+    from chatbot.providers.ollama import OllamaProvider
+    from chatbot.providers.base   import Message
+    from chatbot import config as cfg
+
+    providers_map = {
+        "gemini": GeminiProvider,
+        "claude": ClaudeProvider,
+        "groq":   GroqProvider,
+        "ollama": lambda: OllamaProvider(cfg.OLLAMA_MODEL),
+    }
+
+    if body.provider not in providers_map:
+        return {"ok": False, "response": "", "error": f"Proveedor desconocido: {body.provider}"}
+
+    factory = providers_map[body.provider]
+    p = factory() if callable(factory) else factory
+
+    ok, reason = p.is_available()
+    if not ok:
+        return {"ok": False, "response": "", "error": reason}
+
+    try:
+        reply = p.send(
+            messages=[Message(role="user", content="di hola mundo")],
+            temperature=0.0,
+            max_tokens=10,
+        )
+        return {"ok": True, "response": reply.strip(), "error": ""}
+    except Exception as exc:
+        return {"ok": False, "response": "", "error": str(exc)}
+
+
 @app.get("/api/ollama/models")
 def ollama_models():
     """Lista los modelos Ollama instalados localmente."""

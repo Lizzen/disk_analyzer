@@ -8,7 +8,7 @@
 # Disk Analyzer (DKA) - English
 
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-0.3.2-indigo.svg)]()
+[![Version](https://img.shields.io/badge/version-1.0.1-indigo.svg)]()
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non_Commercial-red.svg)](#license)
 [![OS: Windows](https://img.shields.io/badge/OS-Windows-lightgrey.svg)]()
 
@@ -46,7 +46,14 @@ Two interfaces are available:
 - **Multimodal AI input** — attach images (PNG/JPEG/WebP, max 5 MB) to chat messages; supported by Gemini, Claude and Groq providers via their respective multipart content formats.
 - **Improved system prompt** — "Estilo de comunicación" section (analogies, relative size context, solution-first) and a glossary of common disk-related terms.
 
-## What's New in v0.3.0
+## What's New in v1.0.1
+
+- **Per-provider API key test** — each key card in Settings › API Keys now has an individual **Test** button that sends a real minimal call (`"say hello world"`, `max_tokens=10`) to the provider and shows the live response inline — green on success, red with the error message on failure.
+- **Documentation section in Settings** — new **Docs** tab with two expandable guides: *How to use the app* (scanning, table, visualizations, AI chat, temp cleaner, scan history) and *Configure API keys* (step-by-step for Gemini, Claude, Groq, and Ollama with direct links).
+- **Settings UI fixes** — resolved duplicate `className` prop on three cards in the Parameters tab (active provider, temperature, max tokens) that caused styling to be silently dropped.
+- **Removed global "Verify APIs" button** — replaced by the individual per-provider test flow above.
+
+## What's New in v1.0.0
 
 - **Redesigned AI Chat panel** — modern bubble layout, dynamic status indicator (typing / online), model info bar in header.
 - **12 visual themes** — Dark Void, Midnight Blue, Forest Dark, Light Vanilla, Profile Neon, Profile Pastel, Dark Premium, Dracula, Nord, Tokyo Night, Catppuccin Mocha, GitHub Dark.
@@ -122,7 +129,7 @@ Both are adjustable per-session from the **⚙ Params** tab in the settings pane
 1. Open the **⚙ settings** panel in the chat header.
 2. Go to the **🔑 Keys** tab — enter your API key for the desired provider.
 3. Go to the **🤖 Models** tab — select a model from the list (search or filter by tag). For Ollama, press **↺ detect** to auto-fetch installed models.
-4. Press **Verificar** to test the connection.
+4. Press the **Test** button on each key card to send a real minimal call and verify the connection.
 5. Press **Guardar** — keys are stored in `%APPDATA%\DiskAnalyzer\api_keys.json`, outside the repository.
 
 ---
@@ -267,7 +274,8 @@ flowchart TD
 | `POST` | `/api/chat` | SSE streaming AI chat |
 | `GET` | `/api/config` | Load saved config (keys masked) |
 | `POST` | `/api/config` | Save API keys and model names |
-| `GET` | `/api/providers/status` | Verify all provider connections |
+| `GET` | `/api/providers/status` | Check availability of all providers (key configured?) |
+| `POST` | `/api/providers/test` | Send a real minimal call to a single provider and return its response |
 | `GET` | `/api/ollama/models` | List locally installed Ollama models |
 | `POST` | `/api/export` | Export scan as CSV, JSON, or HTML |
 | `GET` | `/api/risks` | Post-scan risk analysis |
@@ -349,7 +357,7 @@ See the `LICENSE` file for full terms.
 # Disk Analyzer (DKA) - Español
 
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-0.3.2-indigo.svg)]()
+[![Version](https://img.shields.io/badge/version-1.0.1-indigo.svg)]()
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non_Commercial-red.svg)](#licencia)
 [![OS: Windows](https://img.shields.io/badge/OS-Windows-lightgrey.svg)]()
 
@@ -387,7 +395,14 @@ Dos interfaces disponibles:
 - **Entrada multimodal para la IA** — adjunta imágenes (PNG/JPEG/WebP, máx. 5 MB) a los mensajes del chat; soportado por Gemini, Claude y Groq.
 - **System prompt mejorado** — sección "Estilo de comunicación" (analogías, contexto de tamaño relativo, solución primero) y glosario de términos comunes de disco.
 
-## Novedades en v0.3.0
+## Novedades en v1.0.1
+
+- **Prueba individual de API key por proveedor** — cada tarjeta de key en Ajustes › API Keys tiene su propio botón **Probar** que hace una llamada real mínima (`"di hola mundo"`, `max_tokens=10`) al proveedor y muestra la respuesta en vivo — verde si funciona, rojo con el mensaje de error si falla.
+- **Sección de Documentación en Ajustes** — nueva pestaña **Docs** con dos guías expandibles: *Cómo usar la aplicación* (escaneo, tabla, visualizaciones, chat IA, limpiador de temporales, historial) y *Configurar claves de API* (paso a paso para Gemini, Claude, Groq y Ollama con enlaces directos).
+- **Correcciones de UI en Ajustes** — resuelto el atributo `className` duplicado en tres tarjetas de la pestaña Parámetros (proveedor activo, temperatura, máx. tokens) que provocaba que los estilos se aplicaran incorrectamente.
+- **Eliminado el botón global "Verificar APIs"** — sustituido por el flujo de prueba individual por proveedor descrito arriba.
+
+## Novedades en v1.0.0
 
 - **Panel de chat rediseñado** — burbujas modernas, indicador de estado dinámico, barra de modelo en la cabecera.
 - **12 temas visuales** — Dark Void, Midnight Blue, Forest Dark, Light Vanilla, Profile Neon, Profile Pastel, Dark Premium, Dracula, Nord, Tokyo Night, Catppuccin Mocha, GitHub Dark.
@@ -463,7 +478,7 @@ Ambos ajustables en la pestaña **⚙ Params** del panel de configuración.
 1. Abre el panel **⚙ configuración** en la cabecera del chat.
 2. Pestaña **🔑 Keys** — introduce tu API key del proveedor deseado.
 3. Pestaña **🤖 Modelos** — selecciona un modelo de la lista (busca o filtra por etiqueta). Para Ollama, pulsa **↺ detectar** para cargar los modelos instalados.
-4. Pulsa **Verificar** para comprobar la conexión.
+4. Pulsa el botón **Probar** en la tarjeta de cada key para hacer una llamada real mínima y verificar la conexión.
 5. Pulsa **Guardar** — se guarda en `%APPDATA%\DiskAnalyzer\api_keys.json`, fuera del repositorio.
 
 ---
@@ -608,7 +623,8 @@ flowchart TD
 | `POST` | `/api/chat` | Chat con IA vía SSE streaming |
 | `GET` | `/api/config` | Carga configuración guardada (keys enmascaradas) |
 | `POST` | `/api/config` | Guarda API keys y nombres de modelos |
-| `GET` | `/api/providers/status` | Verifica la conexión de todos los proveedores |
+| `GET` | `/api/providers/status` | Comprueba disponibilidad de todos los proveedores (¿key configurada?) |
+| `POST` | `/api/providers/test` | Hace una llamada real mínima a un proveedor concreto y devuelve su respuesta |
 | `GET` | `/api/ollama/models` | Lista los modelos Ollama instalados localmente |
 | `POST` | `/api/export` | Exporta el escaneo como CSV, JSON o HTML |
 | `GET` | `/api/risks` | Análisis de riesgos post-escaneo |

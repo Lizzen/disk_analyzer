@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-import { EyeOff, Eye, Search, RefreshCw, Zap, CheckCircle2, Loader2, Save, X, Key, Cpu, Sliders, Palette, Link2 } from 'lucide-react';
+import { EyeOff, Eye, Search, RefreshCw, Zap, CheckCircle2, Loader2, Save, X, Key, Cpu, Sliders, Palette, Link2, BookOpen, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { THEMES, PROVIDERS, APP_VERSION, MODEL_INFO, KNOWN_MODELS } from '../../utils/constants';
 
 export const SettingsModal = ({
@@ -10,7 +10,7 @@ export const SettingsModal = ({
   provider, setProvider,
   fetchOllamaModels, ollamaModels, ollamaLoading,
   config, savingConfig, configMsg,
-  verifying, verifyResults, saveConfig, verifyApis,
+  testingProvider, testResults, saveConfig, testProvider,
   C, themeId, setTheme,
   settingsTab, setSettingsTab,
   modelSearch, setModelSearch,
@@ -18,6 +18,7 @@ export const SettingsModal = ({
   temperature, setTemperature,
   maxTokens, setMaxTokens,
 }) => {
+  const [openDoc, setOpenDoc] = useState(null);
   if (!showSettings) return null;
 
   return (
@@ -49,10 +50,11 @@ export const SettingsModal = ({
                 {/* Nav items */}
                 <nav className="flex flex-col gap-0.5 p-2 flex-1">
                   {[
-                    { id:"keys",   Icon: Key,     label:"API Keys"  },
-                    { id:"models", Icon: Cpu,     label:"Modelos"   },
-                    { id:"params", Icon: Sliders,  label:"Parámetros"},
-                    { id:"theme",  Icon: Palette,  label:"Tema"      },
+                    { id:"keys",   Icon: Key,      label:"API Keys"     },
+                    { id:"models", Icon: Cpu,      label:"Modelos"      },
+                    { id:"params", Icon: Sliders,  label:"Parámetros"   },
+                    { id:"theme",  Icon: Palette,  label:"Tema"         },
+                    { id:"docs",   Icon: BookOpen, label:"Documentación" },
                   ].map(({ id, Icon: NavIcon, label }) => (
                     <button key={id} onClick={() => setSettingsTab(id)}
                             className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all text-left"
@@ -82,12 +84,14 @@ export const SettingsModal = ({
                     { settingsTab==="keys"   ? "API Keys"
                     : settingsTab==="models" ? "Modelos de IA"
                     : settingsTab==="params" ? "Parámetros del chat"
+                    : settingsTab==="docs"   ? "Documentación"
                     : "Tema visual" }
                   </h2>
                   <p className="text-[10px] mt-0.5" style={{ color: C.textMuted }}>
                     { settingsTab==="keys"   ? "Las claves se guardan localmente en %APPDATA%\\DiskAnalyzer"
                     : settingsTab==="models" ? "Selecciona el modelo a usar para cada proveedor"
                     : settingsTab==="params" ? "Controla la creatividad y longitud de las respuestas"
+                    : settingsTab==="docs"   ? "Guías y recursos para usar la aplicación"
                     : "Cambia la apariencia de la interfaz" }
                   </p>
                 </div>
@@ -98,27 +102,40 @@ export const SettingsModal = ({
                   {/* ── Keys tab ── */}
                   {settingsTab === "keys" && (() => {
                     const KEY_DEFS = [
-                      { id:"GEMINI_API_KEY",    label:"Google Gemini", ph:"AIza…",    hasKey:"has_gemini_key",    color: C.blue,   dot:"🔵" },
-                      { id:"ANTHROPIC_API_KEY", label:"Anthropic Claude", ph:"sk-ant-…", hasKey:"has_anthropic_key", color: C.amber,  dot:"🟠" },
-                      { id:"GROQ_API_KEY",      label:"Groq",          ph:"gsk_…",    hasKey:"has_groq_key",      color: C.purple, dot:"🟣" },
+                      { id:"GEMINI_API_KEY",    provId:"gemini", label:"Google Gemini",    ph:"AIza…",    hasKey:"has_gemini_key",    color: C.blue   },
+                      { id:"ANTHROPIC_API_KEY", provId:"claude", label:"Anthropic Claude", ph:"sk-ant-…", hasKey:"has_anthropic_key", color: C.amber  },
+                      { id:"GROQ_API_KEY",      provId:"groq",   label:"Groq",             ph:"gsk_…",    hasKey:"has_groq_key",      color: C.purple },
                     ];
                     return (
                       <div className="space-y-4">
-                        {KEY_DEFS.map(({ id, label, ph, hasKey, color }) => (
-                          <div key={id} className="rounded-lg p-3"
-                               className="glass-card" style={{ border:`1px solid ${C.border}` }}>
+                        {KEY_DEFS.map(({ id, provId, label, ph, hasKey, color }) => {
+                          const res     = testResults?.[provId];
+                          const testing = testingProvider === provId;
+                          return (
+                          <div key={id} className="glass-card rounded-lg p-3" style={{ border:`1px solid ${C.border}` }}>
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 rounded-full" style={{ background: color }}/>
                                 <span className="text-xs font-semibold" style={{ color: C.textPri }}>{label}</span>
                               </div>
-                              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                                    style={{
-                                      background: config[hasKey] ? `${C.green}20` : `${C.textMuted}15`,
-                                      color: config[hasKey] ? C.green : C.textMuted,
-                                    }}>
-                                {config[hasKey] ? "✓ Configurada" : "Sin configurar"}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                                      style={{
+                                        background: config[hasKey] ? `${C.green}20` : `${C.textMuted}15`,
+                                        color: config[hasKey] ? C.green : C.textMuted,
+                                      }}>
+                                  {config[hasKey] ? "✓ Configurada" : "Sin configurar"}
+                                </span>
+                                <button
+                                  onClick={() => testProvider(provId)}
+                                  disabled={testing || testingProvider !== null}
+                                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full transition-all hover:brightness-125 disabled:opacity-40"
+                                  style={{ background:`${color}20`, color, border:`1px solid ${color}40` }}>
+                                  {testing
+                                    ? <><Loader2 size={9} className="animate-spin"/> Probando…</>
+                                    : <><Zap size={9}/> Probar</>}
+                                </button>
+                              </div>
                             </div>
                             <div className="relative">
                               <input type={showKeys[id] ? "text" : "password"}
@@ -133,8 +150,22 @@ export const SettingsModal = ({
                                 {showKeys[id] ? <EyeOff size={12}/> : <Eye size={12}/>}
                               </button>
                             </div>
+                            {/* Resultado del test */}
+                            {res !== undefined && res !== null && (
+                              <div className="mt-2 px-2 py-1.5 rounded-lg text-[10px] flex items-start gap-1.5"
+                                   style={{
+                                     background: res.ok ? `${C.green}15` : `${C.red}15`,
+                                     border: `1px solid ${res.ok ? C.green : C.red}30`,
+                                   }}>
+                                <span style={{ color: res.ok ? C.green : C.red }}>{res.ok ? "✓" : "✗"}</span>
+                                <span style={{ color: res.ok ? C.green : C.red }}>
+                                  {res.ok ? `Respuesta: "${res.response}"` : res.error}
+                                </span>
+                              </div>
+                            )}
                           </div>
-                        ))}
+                          );
+                        })}
                         <p className="text-[10px] leading-relaxed px-1" style={{ color: C.textMuted }}>
                           Las claves se almacenan en <span className="font-mono" style={{ color: C.textAccent }}>%APPDATA%\DiskAnalyzer\api_keys.json</span> y nunca se suben a ningún servidor.
                         </p>
@@ -328,7 +359,7 @@ export const SettingsModal = ({
                   {settingsTab === "params" && (
                     <div className="space-y-5">
                       {/* Proveedor */}
-                      <div className="rounded-lg p-3" className="glass-card" style={{ border:`1px solid ${C.border}` }}>
+                      <div className="glass-card rounded-lg p-3" style={{ border:`1px solid ${C.border}` }}>
                         <div className="flex items-center gap-2 mb-2">
                           <Zap size={13} style={{ color: C.accentL }}/>
                           <span className="text-xs font-semibold" style={{ color: C.textPri }}>Proveedor activo</span>
@@ -351,7 +382,7 @@ export const SettingsModal = ({
                       </div>
 
                       {/* Temperatura */}
-                      <div className="rounded-lg p-3" className="glass-card" style={{ border:`1px solid ${C.border}` }}>
+                      <div className="glass-card rounded-lg p-3" style={{ border:`1px solid ${C.border}` }}>
                         <div className="flex items-center justify-between mb-3">
                           <div>
                             <span className="text-xs font-semibold" style={{ color: C.textPri }}>Temperatura</span>
@@ -389,7 +420,7 @@ export const SettingsModal = ({
                       </div>
 
                       {/* Max tokens */}
-                      <div className="rounded-lg p-3" className="glass-card" style={{ border:`1px solid ${C.border}` }}>
+                      <div className="glass-card rounded-lg p-3" style={{ border:`1px solid ${C.border}` }}>
                         <div className="flex items-center justify-between mb-3">
                           <div>
                             <span className="text-xs font-semibold" style={{ color: C.textPri }}>Longitud máxima</span>
@@ -421,6 +452,129 @@ export const SettingsModal = ({
                       </div>
                     </div>
                   )}
+
+                  {/* ── Docs tab ── */}
+                  {settingsTab === "docs" && (() => {
+                    const DOCS = [
+                      {
+                        id: "usage",
+                        Icon: BookOpen,
+                        title: "Cómo usar la aplicación",
+                        subtitle: "Guía completa de características y funcionalidades",
+                        color: C.blue,
+                        sections: [
+                          {
+                            heading: "1. Escanear una carpeta",
+                            body: "Haz clic en «Seleccionar carpeta» o arrastra una carpeta a la ventana. El escáner recorre todos los subdirectorios y muestra el uso de disco en tiempo real.",
+                          },
+                          {
+                            heading: "2. Explorar los resultados",
+                            body: "La tabla muestra archivos ordenables por nombre, tamaño, tipo y fecha. Usa los filtros de tamaño y categoría para acotar la búsqueda. Haz doble clic en una carpeta para entrar en ella.",
+                          },
+                          {
+                            heading: "3. Visualizaciones",
+                            body: "El panel de gráficos incluye un treemap interactivo, un histograma de distribución por tamaño y una línea de tiempo. Pasa el cursor sobre cada elemento para ver el detalle.",
+                          },
+                          {
+                            heading: "4. Chat con IA",
+                            body: "Abre el panel de chat y pregunta al asistente sobre los archivos escaneados. El modelo recibe contexto del escaneo actual para darte recomendaciones de limpieza.",
+                          },
+                          {
+                            heading: "5. Limpiador de temporales",
+                            body: "Accede desde el menú de herramientas. Detecta carpetas de caché del sistema, temporales de aplicaciones y archivos de log. Revisa la lista antes de eliminar.",
+                          },
+                          {
+                            heading: "6. Historial de escaneos",
+                            body: "Cada escaneo se guarda automáticamente (máx. 10 entradas). Puedes comparar tamaños entre escaneos pasados o re-escanear una ruta con un clic.",
+                          },
+                        ],
+                      },
+                      {
+                        id: "apikeys",
+                        Icon: Key,
+                        title: "Configurar claves de API",
+                        subtitle: "Cómo obtener y configurar claves para los proveedores de IA",
+                        color: C.amber,
+                        sections: [
+                          {
+                            heading: "Google Gemini",
+                            body: "Ve a aistudio.google.com → «Get API key» → «Create API key». Copia la clave (empieza por AIza…) y pégala en Ajustes › API Keys › Google Gemini.",
+                            link: "https://aistudio.google.com/app/apikey",
+                            linkLabel: "aistudio.google.com",
+                          },
+                          {
+                            heading: "Anthropic Claude",
+                            body: "Entra en console.anthropic.com → «API Keys» → «Create Key». La clave empieza por sk-ant-… Pégala en Ajustes › API Keys › Anthropic Claude.",
+                            link: "https://console.anthropic.com/settings/keys",
+                            linkLabel: "console.anthropic.com",
+                          },
+                          {
+                            heading: "Groq",
+                            body: "Accede a console.groq.com → «API Keys» → «Create API Key». La clave empieza por gsk_… Pégala en Ajustes › API Keys › Groq.",
+                            link: "https://console.groq.com/keys",
+                            linkLabel: "console.groq.com",
+                          },
+                          {
+                            heading: "Ollama (local, sin clave)",
+                            body: "Descarga e instala Ollama desde ollama.com. Ejecuta «ollama pull llama3.2» en la terminal. En Ajustes › Modelos › Ollama pulsa «Detectar» para auto-descubrir los modelos instalados.",
+                            link: "https://ollama.com/download",
+                            linkLabel: "ollama.com/download",
+                          },
+                          {
+                            heading: "¿Dónde se guardan las claves?",
+                            body: "Las claves se almacenan únicamente en tu equipo en %APPDATA%\\DiskAnalyzer\\api_keys.json y nunca se envían a ningún servidor externo.",
+                          },
+                        ],
+                      },
+                    ];
+
+                    return (
+                      <div className="space-y-3">
+                        {DOCS.map(({ id, Icon: DocIcon, title, subtitle, color, sections }) => {
+                          const isOpen = openDoc === id;
+                          return (
+                            <div key={id} className="rounded-xl overflow-hidden glass-card" style={{ border:`1px solid ${C.border}` }}>
+                              {/* Header button */}
+                              <button
+                                onClick={() => setOpenDoc(isOpen ? null : id)}
+                                className="w-full flex items-center gap-3 px-4 py-3 transition-all hover:brightness-110 text-left"
+                                style={{ background: isOpen ? `${color}12` : "transparent" }}
+                              >
+                                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                                     style={{ background:`${color}25`, color }}>
+                                  <DocIcon size={14}/>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold" style={{ color: C.textPri }}>{title}</p>
+                                  <p className="text-[10px] mt-0.5" style={{ color: C.textMuted }}>{subtitle}</p>
+                                </div>
+                                {isOpen ? <ChevronUp size={13} style={{ color: C.textMuted }}/> : <ChevronDown size={13} style={{ color: C.textMuted }}/>}
+                              </button>
+
+                              {/* Expandable content */}
+                              {isOpen && (
+                                <div className="border-t px-4 py-3 space-y-3" style={{ borderColor: C.border }}>
+                                  {sections.map((s, i) => (
+                                    <div key={i}>
+                                      <p className="text-[11px] font-semibold mb-0.5" style={{ color }}>{s.heading}</p>
+                                      <p className="text-[10px] leading-relaxed" style={{ color: C.textSec }}>{s.body}</p>
+                                      {s.link && (
+                                        <a href={s.link} target="_blank" rel="noreferrer"
+                                           className="inline-flex items-center gap-1 mt-1 text-[10px] hover:underline"
+                                           style={{ color: C.accentL }}>
+                                          <ExternalLink size={9}/>{s.linkLabel}
+                                        </a>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
 
                   {/* ── Theme tab ── */}
                   {settingsTab === "theme" && (
@@ -471,42 +625,18 @@ export const SettingsModal = ({
                 </div>
 
                 {/* ── Footer actions (only for keys/models/params) ── */}
-                {settingsTab !== "theme" && (
-                  <div className="px-5 py-3 border-t shrink-0 flex items-center gap-3 glass-panel" style={{ borderColor: C.border,  }}>
+                {settingsTab !== "theme" && settingsTab !== "docs" && (
+                  <div className="px-5 py-3 border-t shrink-0 flex items-center gap-3 glass-panel" style={{ borderColor: C.border }}>
                     <button onClick={saveConfig} disabled={savingConfig}
                             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all hover:brightness-110 disabled:opacity-50"
                             style={{ background: C.accent, color:"white" }}>
                       {savingConfig ? <Loader2 size={12} className="animate-spin"/> : <Save size={12}/>}
                       Guardar cambios
                     </button>
-                    <button onClick={verifyApis} disabled={verifying}
-                            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs transition-all hover:brightness-110 disabled:opacity-50"
-                            className="glass-card" style={{ color: C.textSec, border:`1px solid ${C.border}` }}>
-                      {verifying ? <Loader2 size={12} className="animate-spin"/> : <CheckCircle2 size={12}/>}
-                      Verificar APIs
-                    </button>
                     {configMsg && (
                       <span className="text-xs flex items-center gap-1" style={{ color: C.green }}>
                         <CheckCircle2 size={11}/> {configMsg}
                       </span>
-                    )}
-                    <div className="flex-1"/>
-                    {/* Verify results inline chips */}
-                    {verifyResults && (
-                      <div className="flex items-center gap-1.5">
-                        {Object.entries(verifyResults || {}).map(([pid, val]) => {
-                          const available = val?.available ?? false;
-                          return (
-                            <span key={pid} className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                                  style={{
-                                    background: available ? `${C.green}20` : `${C.red}20`,
-                                    color: available ? C.green : C.red,
-                                  }}>
-                              {available ? "✓" : "✗"} {pid}
-                            </span>
-                          );
-                        })}
-                      </div>
                     )}
                   </div>
                 )}
