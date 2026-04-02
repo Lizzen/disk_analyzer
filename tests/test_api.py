@@ -282,6 +282,70 @@ class TestTempClean:
         assert "errors" in data or "deleted" in data
 
 
+# ── /api/providers/test ───────────────────────────────────────────────────────
+
+class TestProvidersTest:
+    def test_invalid_provider_returns_422(self):
+        r = client.post("/api/providers/test", json={"provider": "fakeprovider"})
+        assert r.status_code == 422
+
+    def test_provider_too_long_returns_422(self):
+        r = client.post("/api/providers/test", json={"provider": "x" * 25})
+        assert r.status_code == 422
+
+    def test_provider_unavailable_returns_ok_false(self, monkeypatch):
+        """Cuando is_available() falla, el endpoint devuelve ok=False sin llamar a send()."""
+        import chatbot.providers.gemini as gemini_mod
+
+        class _FakeProvider:
+            def is_available(self):
+                return (False, "No API key configured")
+            def send(self, **kwargs):  # pragma: no cover
+                raise AssertionError("send() should not be called")
+
+        monkeypatch.setattr(gemini_mod, "GeminiProvider", _FakeProvider)
+        r = client.post("/api/providers/test", json={"provider": "gemini"})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] is False
+        assert "No API key configured" in data["error"]
+
+    def test_provider_send_success(self, monkeypatch):
+        """Cuando send() tiene éxito, el endpoint devuelve ok=True con la respuesta."""
+        import chatbot.providers.gemini as gemini_mod
+
+        class _FakeProvider:
+            def is_available(self):
+                return (True, "")
+            def send(self, messages, temperature=0.0, max_tokens=10):
+                return "hola mundo"
+
+        monkeypatch.setattr(gemini_mod, "GeminiProvider", _FakeProvider)
+        r = client.post("/api/providers/test", json={"provider": "gemini"})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] is True
+        assert data["response"] == "hola mundo"
+        assert data["error"] == ""
+
+    def test_provider_send_raises_returns_ok_false(self, monkeypatch):
+        """Cuando send() lanza una excepción, el endpoint devuelve ok=False."""
+        import chatbot.providers.groq_p as groq_mod
+
+        class _FakeProvider:
+            def is_available(self):
+                return (True, "")
+            def send(self, messages, temperature=0.0, max_tokens=10):
+                raise RuntimeError("connection timeout")
+
+        monkeypatch.setattr(groq_mod, "GroqProvider", _FakeProvider)
+        r = client.post("/api/providers/test", json={"provider": "groq"})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] is False
+        assert "connection timeout" in data["error"]
+
+
 # ── /api/chat — validación de entrada ────────────────────────────────────────
 
 class TestChatValidation:

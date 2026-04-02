@@ -175,8 +175,8 @@ export default function App() {
   const [modelInputs, setModelInputs]     = useState({ GEMINI_MODEL:"", GROQ_MODEL:"", CLAUDE_MODEL:"", OLLAMA_MODEL:"" });
   const [savingConfig, setSavingConfig]   = useState(false);
   const [configMsg, setConfigMsg]         = useState("");
-  const [verifying, setVerifying]         = useState(false);
-  const [verifyResults, setVerifyResults] = useState(null);
+  const [testingProvider, setTestingProvider] = useState(null);   // id del provider en prueba
+  const [testResults, setTestResults]         = useState({});     // { gemini: {ok,response,error}, … }
   const [showKeys, setShowKeys]           = useState({});
   const [modelSearch, setModelSearch]     = useState("");
   // Parámetros del LLM
@@ -414,13 +414,22 @@ export default function App() {
     finally { setSavingConfig(false); }
   };
 
-  const verifyApis = async () => {
-    setVerifying(true); setVerifyResults(null);
+  const testProvider = async (providerId) => {
+    setTestingProvider(providerId);
+    setTestResults(prev => ({ ...prev, [providerId]: null }));
     try {
-      const r = await fetch(`${API}/api/providers/status`);
-      if (r.ok) setVerifyResults(await r.json());
-    } catch (e) { setVerifyResults({ _error:{ available:false, reason:e.message }}); }
-    finally { setVerifying(false); }
+      const r = await fetch(`${API}/api/providers/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: providerId }),
+      });
+      const data = await r.json();
+      setTestResults(prev => ({ ...prev, [providerId]: data }));
+    } catch (e) {
+      setTestResults(prev => ({ ...prev, [providerId]: { ok: false, response: "", error: e.message } }));
+    } finally {
+      setTestingProvider(null);
+    }
   };
 
   // ── Filtros / Orden ───────────────────────────────────────────────────────────
@@ -1421,10 +1430,10 @@ export default function App() {
           config={config}
           savingConfig={savingConfig}
           configMsg={configMsg}
-          verifying={verifying}
-          verifyResults={verifyResults}
+          testingProvider={testingProvider}
+          testResults={testResults}
           saveConfig={saveConfig}
-          verifyApis={verifyApis}
+          testProvider={testProvider}
           C={C}
           themeId={themeId}
           setTheme={setTheme}

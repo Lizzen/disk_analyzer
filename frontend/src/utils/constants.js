@@ -3,7 +3,7 @@ import {
 } from "lucide-react";
 
 export const API = "http://127.0.0.1:8000";
-export const APP_VERSION = import.meta.env?.VITE_APP_VERSION ?? "0.3.0";
+export const APP_VERSION = import.meta.env?.VITE_APP_VERSION ?? "1.0.1";
 
 // ── Constantes de chat ─────────────────────────────────────────────────────────
 export const CHAT_HISTORY_KEY  = "da-chat-history-v1";

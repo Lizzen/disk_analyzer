@@ -9,6 +9,7 @@
 
 [![Version](https://img.shields.io/badge/version-1.0.0-6366f1.svg)]()
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Version](https://img.shields.io/badge/version-1.0.1-indigo.svg)]()
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non_Commercial-red.svg)](#license)
 [![OS: Windows](https://img.shields.io/badge/OS-Windows%2010%2F11-lightgrey.svg)]()
 
@@ -28,16 +29,46 @@ Or go to the [Releases page](https://github.com/Lizzen/disk_analyzer/releases/la
 
 ---
 
+## What's New in v0.3.2
+
+- **Mermaid diagram rendering** — the AI can now generate interactive flowcharts, architecture maps, folder structure diagrams and more directly in the chat, rendered with Mermaid.js.
+- **Diagram lightbox** — click any diagram (or the ⤢ button) to open it fullscreen. Close with `Escape` or click outside.
+- **Claude Code-style code blocks** — numbered lines, click any line to copy it (line number turns ✓), "copy all" button, macOS-style header dots, language label, auto-scroll for long blocks.
+- **Improved ChatMarkdown renderer** — new elements: `# H1` with divider, `## H2` with color accent bar, `### H3`, `> blockquotes`, Markdown tables `|col|col|`, `---` horizontal rules, `~~strikethrough~~`, numbered lists with `.` or `)`. Better font size (12px) and line spacing.
+- **Proactive risk detection** — after every scan, `/api/risks` analyses the result in-memory and surfaces alerts: executables in TEMP (high), large files without extension (medium), abnormally large known folders (medium), duplicate waste >500 MB (medium).
+- **Risk Alerts panel** — bell icon in toolbar shows alerts with severity icons; each alert has "Open in Explorer" and "Ask AI" actions.
+- **Horizontal bar chart view** — top 25 folders as proportional colored bars with percentage and file count (switch to "Barras" in the view selector).
+- **Temp file cleaner** — scans %TEMP%, AppData\Local\Temp, Chrome/Edge/Firefox caches and Windows Thumbnails; select files and clean to Recycle Bin or permanently.
+- **Heavy folder detection** — scanner detects `node_modules`, `.git`, `__pycache__`, `venv`, `ShaderCache` etc. during scan and reports their total size without full indexing.
+- **Last-accessed filter** — filter files not accessed in 6 months, 1 year, or 2 years (note: NTFS disables atime by default on Windows).
+- **HTML export** — export scan results as a standalone HTML report with CSS bar charts and full file/folder/category tables. All values are HTML-escaped.
+- **Scan history** — last 10 scans saved to localStorage with path, date, size, file count, top folders and category breakdown.
+- **Folder comparator** — compare any two folders from the current scan side-by-side.
+- **Favorites** — pin frequently scanned paths for quick access from the toolbar dropdown.
+- **AI analogies & glossary** — system prompt now explains technical terms (node_modules, ShaderCache, hiberfil.sys, pagefile.sys…) using everyday analogies and provides size context relative to familiar references.
+- **Toast notifications** — subtle slide-in toasts confirm scan completion, clipboard actions, and more.
+
+## What's New in v0.3.1
+
+- **Toast notification system** — module-level emitter with `useToast()` hook + `ToastContainer`; `toastIn` CSS keyframe animation defined in `index.css`.
+- **Multimodal AI input** — attach images (PNG/JPEG/WebP, max 5 MB) to chat messages; supported by Gemini, Claude and Groq providers via their respective multipart content formats.
+- **Improved system prompt** — "Estilo de comunicación" section (analogies, relative size context, solution-first) and a glossary of common disk-related terms.
+
+## What's New in v1.0.1
+
+- **Per-provider API key test** — each key card in Settings › API Keys now has an individual **Test** button that sends a real minimal call (`"say hello world"`, `max_tokens=10`) to the provider and shows the live response inline — green on success, red with the error message on failure.
+- **Documentation section in Settings** — new **Docs** tab with two expandable guides: *How to use the app* (scanning, table, visualizations, AI chat, temp cleaner, scan history) and *Configure API keys* (step-by-step for Gemini, Claude, Groq, and Ollama with direct links).
+- **Settings UI fixes** — resolved duplicate `className` prop on three cards in the Parameters tab (active provider, temperature, max tokens) that caused styling to be silently dropped.
+- **Removed global "Verify APIs" button** — replaced by the individual per-provider test flow above.
+
 ## What's New in v1.0.0
 
-- **Standalone executable** — `DiskAnalyzer.exe` bundles the entire app (Python runtime + React frontend). No installation needed.
-- **Secure API key storage** — Keys are now stored in the **Windows Credential Manager** instead of a plaintext JSON file.
-- **Symlink traversal protection** — Recycle Bin and permanent delete operations now check symlink targets against protected system paths.
-- **XSS hardening** — Mermaid diagrams use `securityLevel: "strict"` and DOM-based rendering instead of `dangerouslySetInnerHTML`.
-- **Error visibility** — Network errors in the temp cleaner are now shown in the UI instead of being silently swallowed.
-- **API test suite** — 43 integration tests covering all REST endpoints.
-- **`requirements.txt`** with pinned versions for reproducible installs.
-- **Improved `run_admin.bat`** — verifies Python, dependencies, and frontend before launching.
+- **Redesigned AI Chat panel** — modern bubble layout, dynamic status indicator (typing / online), model info bar in header.
+- **12 visual themes** — Dark Void, Midnight Blue, Forest Dark, Light Vanilla, Profile Neon, Profile Pastel, Dark Premium, Dracula, Nord, Tokyo Night, Catppuccin Mocha, GitHub Dark.
+- **Expanded model library** — 40+ models across Gemini (10), Groq (25+), Claude (11) with metadata, search and tag filters.
+- **Settings panel redesign** — sidebar navigation, per-provider model cards with speed bars and recommended badges, temperature/token sliders with quick presets.
+- **Context menu delete** — right-click any file to move to Recycle Bin or permanently delete, with confirmation modal.
+- **Security hardening** — Pydantic `Field` validation, `_validate_file_path()`, protected path ancestor checks, no `shell=True`.
 
 ---
 
@@ -85,9 +116,9 @@ Right-click any file and select **Attach to chat** to give the AI specific conte
 
 1. Open the **⚙ settings** panel in the chat header.
 2. Go to the **🔑 Keys** tab — enter your API key for the desired provider.
-3. Go to the **🤖 Models** tab — select a model (search or filter by tag). For Ollama, press **↺ detect** to auto-fetch installed models.
-4. Press **Verificar** to test the connection.
-5. Press **Guardar** — keys are stored securely in the **Windows Credential Manager**.
+3. Go to the **🤖 Models** tab — select a model from the list (search or filter by tag). For Ollama, press **↺ detect** to auto-fetch installed models.
+4. Press the **Test** button on each key card to send a real minimal call and verify the connection.
+5. Press **Guardar** — keys are stored in `%APPDATA%\DiskAnalyzer\api_keys.json`, outside the repository.
 
 ---
 
@@ -186,8 +217,9 @@ flowchart TD
 | `GET` | `/api/disk-info` | Disk usage for a given path |
 | `POST` | `/api/chat` | SSE streaming AI chat |
 | `GET` | `/api/config` | Load saved config (keys masked) |
-| `POST` | `/api/config` | Save model and provider settings |
-| `GET` | `/api/providers/status` | Verify all provider connections |
+| `POST` | `/api/config` | Save API keys and model names |
+| `GET` | `/api/providers/status` | Check availability of all providers (key configured?) |
+| `POST` | `/api/providers/test` | Send a real minimal call to a single provider and return its response |
 | `GET` | `/api/ollama/models` | List locally installed Ollama models |
 | `POST` | `/api/export` | Export scan as CSV, JSON, or HTML |
 | `GET` | `/api/risks` | Post-scan risk analysis |
@@ -232,6 +264,7 @@ See the `LICENSE` file for full terms.
 
 [![Version](https://img.shields.io/badge/version-1.0.0-6366f1.svg)]()
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Version](https://img.shields.io/badge/version-1.0.1-indigo.svg)]()
 [![License: Non-Commercial](https://img.shields.io/badge/License-Non_Commercial-red.svg)](#licencia)
 [![OS: Windows](https://img.shields.io/badge/OS-Windows%2010%2F11-lightgrey.svg)]()
 
@@ -251,16 +284,46 @@ O visita la [página de Releases](https://github.com/Lizzen/disk_analyzer/releas
 
 ---
 
+## Novedades en v0.3.2
+
+- **Diagramas Mermaid en el chat** — la IA puede generar flowcharts, mapas de arquitectura, estructuras de carpetas y más directamente en el chat, renderizados con Mermaid.js.
+- **Lightbox de diagramas** — haz click en cualquier diagrama (o el botón ⤢) para abrirlo en pantalla completa. Cierra con `Escape` o click fuera.
+- **Bloques de código estilo Claude Code** — líneas numeradas, click en cualquier línea para copiarla (el número se convierte en ✓), botón "copiar todo", puntos estilo macOS, etiqueta de lenguaje, scroll interno para bloques largos.
+- **ChatMarkdown mejorado** — nuevos elementos: `# H1` con divisor, `## H2` con barra de color, `### H3`, `> citas`, tablas Markdown `|col|col|`, `---` separadores, `~~tachado~~`, listas numeradas con `.` o `)`. Mejor tamaño de fuente (12px) y espaciado.
+- **Detección proactiva de riesgos** — tras cada escaneo, `/api/risks` analiza el resultado en memoria y muestra alertas: ejecutables en TEMP (alta), archivos grandes sin extensión (media), carpetas conocidas anómalamente grandes (media), duplicados que desperdician >500 MB (media).
+- **Panel de alertas de riesgo** — icono de campana en la barra muestra alertas con iconos de severidad; cada alerta tiene acciones "Abrir en Explorador" y "Preguntar IA".
+- **Vista de barras horizontales** — las 25 carpetas más grandes como barras proporcionales con colores, porcentaje y número de archivos (cambia a "Barras" en el selector de vista).
+- **Limpiador de temporales** — escanea %TEMP%, AppData\Local\Temp, cachés de Chrome/Edge/Firefox y Miniaturas de Windows; selecciona archivos y limpia a Papelera o permanentemente.
+- **Detección de carpetas pesadas** — el scanner detecta `node_modules`, `.git`, `__pycache__`, `venv`, `ShaderCache` etc. durante el escaneo y reporta su tamaño total sin indexación completa.
+- **Filtro por último acceso** — filtra archivos no accedidos en 6 meses, 1 año o 2 años (nota: NTFS desactiva atime por defecto en Windows).
+- **Exportación HTML** — exporta los resultados como un informe HTML independiente con gráficas CSS y tablas completas. Todos los valores están escapados con `html.escape()`.
+- **Historial de escaneos** — los últimos 10 escaneos se guardan en localStorage con ruta, fecha, tamaño, número de archivos, carpetas top y desglose de categorías.
+- **Comparador de carpetas** — compara dos carpetas del escaneo actual lado a lado.
+- **Favoritos** — fija rutas de escaneo frecuentes para acceso rápido desde el desplegable de la barra.
+- **Analogías y glosario para la IA** — el system prompt explica términos técnicos (node_modules, ShaderCache, hiberfil.sys, pagefile.sys…) con analogías cotidianas y contexto de tamaño relativo.
+- **Notificaciones toast** — toasts discretos confirman el fin del escaneo, acciones de portapapeles y más.
+
+## Novedades en v0.3.1
+
+- **Sistema de notificaciones toast** — emisor a nivel de módulo con hook `useToast()` + `ToastContainer`; animación CSS `toastIn` definida en `index.css`.
+- **Entrada multimodal para la IA** — adjunta imágenes (PNG/JPEG/WebP, máx. 5 MB) a los mensajes del chat; soportado por Gemini, Claude y Groq.
+- **System prompt mejorado** — sección "Estilo de comunicación" (analogías, contexto de tamaño relativo, solución primero) y glosario de términos comunes de disco.
+
+## Novedades en v1.0.1
+
+- **Prueba individual de API key por proveedor** — cada tarjeta de key en Ajustes › API Keys tiene su propio botón **Probar** que hace una llamada real mínima (`"di hola mundo"`, `max_tokens=10`) al proveedor y muestra la respuesta en vivo — verde si funciona, rojo con el mensaje de error si falla.
+- **Sección de Documentación en Ajustes** — nueva pestaña **Docs** con dos guías expandibles: *Cómo usar la aplicación* (escaneo, tabla, visualizaciones, chat IA, limpiador de temporales, historial) y *Configurar claves de API* (paso a paso para Gemini, Claude, Groq y Ollama con enlaces directos).
+- **Correcciones de UI en Ajustes** — resuelto el atributo `className` duplicado en tres tarjetas de la pestaña Parámetros (proveedor activo, temperatura, máx. tokens) que provocaba que los estilos se aplicaran incorrectamente.
+- **Eliminado el botón global "Verificar APIs"** — sustituido por el flujo de prueba individual por proveedor descrito arriba.
+
 ## Novedades en v1.0.0
 
-- **Ejecutable independiente** — `DiskAnalyzer.exe` incluye toda la app (runtime Python + frontend React). Sin instalación.
-- **Almacenamiento seguro de claves** — Las API keys ahora se guardan en el **Administrador de Credenciales de Windows** en lugar de un archivo JSON en texto plano.
-- **Protección contra traversal por symlinks** — Las operaciones de Papelera y borrado permanente verifican el destino real de los enlaces simbólicos contra rutas protegidas del sistema.
-- **Hardening XSS** — Los diagramas Mermaid usan `securityLevel: "strict"` y renderizado DOM en lugar de `dangerouslySetInnerHTML`.
-- **Errores visibles** — Los errores de red en el limpiador de temporales ahora se muestran en la interfaz en lugar de ignorarse silenciosamente.
-- **Suite de tests de API** — 43 tests de integración cubriendo todos los endpoints REST.
-- **`requirements.txt`** con versiones fijadas para instalaciones reproducibles.
-- **`run_admin.bat` mejorado** — verifica Python, dependencias y frontend antes de lanzar.
+- **Panel de chat rediseñado** — burbujas modernas, indicador de estado dinámico, barra de modelo en la cabecera.
+- **12 temas visuales** — Dark Void, Midnight Blue, Forest Dark, Light Vanilla, Profile Neon, Profile Pastel, Dark Premium, Dracula, Nord, Tokyo Night, Catppuccin Mocha, GitHub Dark.
+- **Biblioteca de modelos ampliada** — más de 40 modelos entre Gemini (10), Groq (25+), Claude (11).
+- **Panel de ajustes rediseñado** — navegación lateral, tarjetas de modelos, sliders de temperatura/tokens.
+- **Eliminar desde menú contextual** — clic derecho → Papelera o borrado permanente con confirmación.
+- **Seguridad reforzada** — validación con Pydantic `Field`, rutas protegidas, sin `shell=True`.
 
 ---
 
@@ -307,9 +370,9 @@ Haz clic derecho en cualquier archivo y selecciona **Adjuntar al chat** para dar
 
 1. Abre el panel **⚙ configuración** en la cabecera del chat.
 2. Pestaña **🔑 Keys** — introduce tu API key del proveedor deseado.
-3. Pestaña **🤖 Modelos** — selecciona un modelo. Para Ollama, pulsa **↺ detectar**.
-4. Pulsa **Verificar** para comprobar la conexión.
-5. Pulsa **Guardar** — las claves se guardan en el **Administrador de Credenciales de Windows**.
+3. Pestaña **🤖 Modelos** — selecciona un modelo de la lista (busca o filtra por etiqueta). Para Ollama, pulsa **↺ detectar** para cargar los modelos instalados.
+4. Pulsa el botón **Probar** en la tarjeta de cada key para hacer una llamada real mínima y verificar la conexión.
+5. Pulsa **Guardar** — se guarda en `%APPDATA%\DiskAnalyzer\api_keys.json`, fuera del repositorio.
 
 ---
 
@@ -385,6 +448,81 @@ disk_analyzer/
     ├── test_scanner.py     # Tests unitarios del scanner
     └── test_api.py         # 43 tests de integración de endpoints API
 ```
+
+---
+
+## Arquitectura
+
+### Interfaz Moderna — Escaneo en Tiempo Real
+
+El scanner corre en un hilo separado y envía lotes de mensajes al frontend vía WebSocket. React acumula los resultados en refs (sin re-render por lote) y vuelca al estado cada 500ms.
+
+```mermaid
+flowchart TD
+    A[Hilo Worker: DiskScanner] -->|WebSocket en lotes| B[file_batch / folder / progress / done]
+    B --> C[React: acumulación en allFilesRef / foldersRef]
+    C -->|flush cada 500ms| D[Estado React / VirtualList render]
+    E[POST /api/chat] -->|SSE chunks agrupados 30ms| F[ChatMarkdown + MermaidDiagram]
+    G[scan done] -->|GET /api/risks| H[RiskAlertsPanel]
+```
+
+### Tipos de Mensajes WebSocket
+
+| Tipo | Campos |
+|---|---|
+| `start` | `root` |
+| `folder` | `path`, `size`, `file_count` |
+| `file_batch` | `entries: list[dict]` |
+| `progress` | `done`, `total`, `current`, `bytes` |
+| `heavy_folder` | `path`, `name`, `parent`, `size` |
+| `done` | `total_bytes`, `elapsed`, `duplicates`, `errors` |
+
+### Endpoints de la API
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `WS` | `/ws/scan` | Mensajes de escaneo en tiempo real |
+| `GET` | `/api/disk-info` | Uso de disco para una ruta dada |
+| `POST` | `/api/chat` | Chat con IA vía SSE streaming |
+| `GET` | `/api/config` | Carga configuración guardada (keys enmascaradas) |
+| `POST` | `/api/config` | Guarda API keys y nombres de modelos |
+| `GET` | `/api/providers/status` | Comprueba disponibilidad de todos los proveedores (¿key configurada?) |
+| `POST` | `/api/providers/test` | Hace una llamada real mínima a un proveedor concreto y devuelve su respuesta |
+| `GET` | `/api/ollama/models` | Lista los modelos Ollama instalados localmente |
+| `POST` | `/api/export` | Exporta el escaneo como CSV, JSON o HTML |
+| `GET` | `/api/risks` | Análisis de riesgos post-escaneo |
+| `GET` | `/api/temp-files` | Escanea directorios temporales/caché |
+| `POST` | `/api/temp-clean` | Elimina archivos temporales seleccionados |
+| `POST` | `/api/open-in-explorer` | Abre una ruta en el Explorador de Windows |
+| `POST` | `/api/trash` | Mueve un archivo a la Papelera de reciclaje |
+| `POST` | `/api/delete-permanent` | Elimina permanentemente (con protección de rutas del sistema) |
+
+---
+
+## Código de Colores en la Tabla
+
+| Color | Significado |
+|---|---|
+| Rojo | > 1 GB |
+| Naranja | > 100 MB |
+| Azul | > 10 MB |
+| Morado | Archivo de caché / temporal |
+| Alternado oscuro | Resto de archivos |
+
+---
+
+## Categorías de Archivos Detectadas
+
+| Categoría | Extensiones |
+|---|---|
+| Videos | `.mp4`, `.mkv`, `.avi`, `.mov`, `.wmv`, `.ts`… |
+| Imágenes | `.jpg`, `.png`, `.gif`, `.raw`, `.psd`, `.heic`… |
+| Audio | `.mp3`, `.flac`, `.wav`, `.aac`, `.opus`… |
+| Documentos | `.pdf`, `.docx`, `.xlsx`, `.txt`, `.epub`… |
+| Instaladores/ISO | `.iso`, `.exe`, `.msi`, `.zip`, `.7z`, `.rar`… |
+| Temporales/Cache | `.tmp`, `.temp`, `.log`, `.bak`, `.dmp`… |
+| Desarrollo (compilados) | `.pyc`, `.class`, `.obj`, `.pdb`… |
+| Bases de datos | `.db`, `.sqlite`, `.mdf`… |
 
 ---
 
