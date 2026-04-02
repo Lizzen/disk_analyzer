@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-import { EyeOff, Eye, Search, RefreshCw, Zap, CheckCircle2, Loader2, Save, X, Key, Cpu, Sliders, Palette, Link2, BookOpen, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { EyeOff, Eye, Search, RefreshCw, Zap, CheckCircle2, Loader2, Save, X, Key, Cpu, Sliders, Palette, BookOpen, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { THEMES, PROVIDERS, APP_VERSION, MODEL_INFO, KNOWN_MODELS } from '../../utils/constants';
 
 export const SettingsModal = ({
